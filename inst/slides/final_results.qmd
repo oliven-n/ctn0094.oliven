@@ -1,12 +1,12 @@
 ---
-title: "Your title goes here"
-author: 
-  - name: "Your name goes here"
+title: "Predicting Treatment Response for Opioid Use Disorder"
+author:
+  - name: "Nat Oliven"
   - affiliation:
       - "Department of Public Health Sciences, <br>Division of Biostatistics and Bioinformatics"
 date: last-modified
 date-format: "MMMM D, YYYY"
-format: 
+format:
   revealjs:
     theme: [default, slides.scss]
     slideNumber: true
@@ -19,60 +19,189 @@ format:
       data-background: "linear-gradient(to right, white 25%, #F47321 25%)"
     pdf-max-pages-per-slide: 1
     pdf-separate-fragments: true
-embed-resources: true   # true = a single file, false = multiple files
+embed-resources: true
 knitr:
-  opts_chunk:      ########## set global options ############
-    collapse: true # keep code from blocks together (if shown)
-    echo: true     # don't show code
-    message: true  # show messages
-    warning: true  # show warnings
-    error: true    # show error messages
-    comment: ""    # don't show ## with printed output
-    R.options:   
-      digits: 3    # round to three digits
+  opts_chunk:
+    collapse: true
+    echo: false
+    message: false
+    warning: false
+    error: false
+    comment: ""
+    R.options:
+      digits: 3
 editor_options:
   chunk_output_type: console
 editor: source
 ---
 
-# Introduction
-
-```{r echo=FALSE}
-# Helper packages - need dplyr and ggplot
+```{r setup}
+#| include: false
+#| cache: true
 library(conflicted)
 suppressPackageStartupMessages(library(tidymodels))
 tidymodels_prefer()
- 
 suppressPackageStartupMessages(library(tidyverse))
-
 library(knitr)
-# library(kableExtra)
+conflicts_prefer(dplyr::filter)
+options(dplyr.summarise.inform = FALSE)
+source("../../vignettes/building_analysis.R")
 ```
 
-## Opioid Use Disorder is a Problem
+# Introduction
 
-- Deaths
-  - Deaths in 2025:
-- Costs
-  - 1 Trillion dollars estimated by the whitehouse
+## The Opioid Crisis in the United States
 
-## Medication for OUD is often useful
+- Approximately **80,000 overdose deaths per year** (2022–2023), ~75% involving opioids
+- An estimated **2.7 million Americans** met criteria for opioid use disorder in 2022
+- Economic burden estimated at **$1 trillion per year** in healthcare, criminal justice, and lost productivity
+- Despite effective treatments, fewer than 1 in 5 people with OUD receive any form of care
 
-::: {.columns style="display:flex !important; height:40%;"}
-::::{.column style = 'display: flex; justify-content: center; align-items: center; text-align:left;'}
+## What is Opioid Use Disorder?
 
-| Medications   | Methods      |
-|---------------|--------------|
-| Bup           | under tongue |
-| Methadone     | drink it     |
-| XR-Naltrexone | injection    |
+- A chronic, relapsing brain disorder characterized by compulsive opioid use despite harmful consequences
+- Diagnosed by ≥ 2 DSM-5 criteria within a 12-month period, including:
+  - Persistent cravings; failed attempts to cut down
+  - Tolerance and withdrawal
+  - Continued use despite physical or psychological harm
+- Associated with high rates of infectious disease (HIV, hepatitis C), psychiatric comorbidity, and social impairment
+- Neurobiological basis: dysregulation of the mesolimbic dopamine system following chronic opioid exposure
+
+## Medications for Opioid Use Disorder (MOUD)
+
+::: {.columns style="display:flex !important; height:55%;"}
+
+:::: {.column style="display:flex; justify-content:center; align-items:center; text-align:left;"}
+
+| Medication | Mechanism | Route |
+|---|---|---|
+| Buprenorphine-Naloxone | Partial μ-agonist | Sublingual |
+| Methadone | Full μ-agonist | Oral (supervised) |
+| XR-Naltrexone | μ-antagonist | Monthly injection |
+
+::::
+
+:::: {.column style="display:flex; justify-content:center; align-items:center; text-align:left;"}
+
+- MOUD reduces opioid-related mortality by **50–60%**
+- Reduces illicit drug use, infectious disease transmission, and criminal activity
+- All three are FDA-approved; each has distinct advantages and contraindications
+
+::::
+
 :::
 
-::: {.column style='display:flex; justify-content:center; align-items: center; text-align:left}
-These things work
+## The Challenge: Treatment Matching
+
+- MOUD is effective at the **group level**, but individual response varies substantially
+- A patient assigned to one medication may do well; assigned to another, they may relapse within weeks
+- No validated clinical tool currently exists to guide MOUD selection for a given patient
+- **Goal of this project:** Use pre-treatment patient characteristics to predict treatment response and identify which patients are most likely to benefit from each medication
+
+# Data
+
+## CTN-0094 Harmonized Dataset
+
+Three NIDA Clinical Trials Network randomized controlled trials, harmonized in the `public.ctn0094data` R package:
+
+| Study | Comparison | N |
+|---|---|---|
+| CTN-0028 | Methadone vs. Buprenorphine-Naloxone | 1,920 |
+| CTN-0030 | Buprenorphine-Naloxone (dose taper study) | 868 |
+| CTN-0051 | XR-Naltrexone vs. Buprenorphine-Naloxone | 772 |
+| **Total** | | **3,560** |
+
+Participants were opioid-dependent adults enrolled at community treatment programs across the United States.
+
+## Study Design & Inclusion Criteria
+
+- **Unit of analysis:** One row per participant, first randomization only
+  - CTN-0030 includes a re-randomization step — excluded via inner join on each participant's earliest randomization date
+- **Pre-treatment window:** Days −28 to −1 relative to randomization (day 0)
+  - Exactly 28 days; provides 4 of each weekday per participant
+  - No data from the treatment period (day 0 onward) used as predictors
+- **Outcome:** Relapse during the treatment period
+  - Not yet joined to the feature matrix — will be added at modelling time
+
+# Methods
+
+## Feature Engineering: Overview
+
+- **Feature matrix:** `r nrow(analysis_tibble)` participants × `r ncol(analysis_tibble) - 2L` feature columns (current; grows as TODOs are resolved)
+- All longitudinal features derived exclusively from the 28-day pre-randomization window
+- Primary substance use source: `all_drugs` dataset
+  - More granular than standalone TLFB table
+  - Covers three detection sources: TLFB self-report, urine drug screen (UDS), UDS with alcohol biomarker (UDSAB)
+- Categorical variables kept as-is; dummy encoding applied at modelling time
+
+## Substance Use: Drug Grouping
+
+Drug categories were grouped via a manual map (`drug_map`) to reduce sparsity:
+
+- Rare prescription opioids (codeine, hydrocodone, morphine, etc.) → **"Opioid"**
+- THC + K2 (synthetic cannabinoid) → **"Cannabinoids"**
+- MDMA + Hallucinogen → **"MDMA/Hallucinogen"** *(flagged for removal — low prevalence)*
+- Non-benzo sedatives → **"Sedatives"**; antidepressants → **"Antidepressant"**
+- Heroin, Fentanyl, Cocaine, Crack, Methamphetamine, Amphetamine kept **separate**
+
+Two-stage filtering applied after grouping:
+
+1. Drop categories with < 10 events in the window
+2. Drop illicit categories used by < 1% of participants (prescribed/legal categories exempt)
+
+**`r length(surviving_drugs)` drug categories** survived filtering.
+
+## Substance Use: Per-Drug Features
+
+For each surviving drug category, up to three features are computed:
+
+| Feature | Description | Omitted for |
+|---|---|---|
+| `_days` | Distinct days of detected use | — |
+| `_streak` | Longest consecutive-day run | Study medications, low-signal substances |
+| `_binary` | Any use in the window (0/1) | — |
+
+**Examples:** `heroin_days`, `heroin_streak`, `heroin_binary`; `cannabinoids_days`, `cannabinoids_binary`
+
+Streak is omitted for pre-randomization study medications (buprenorphine, suboxone, methadone) because consecutive use reflects adherence, not escalation.
+
+## Derived Substance Use Features
+
+| Feature | Definition |
+|---|---|
+| `alcohol_restraint` | Heavy drinking days − light drinking days |
+| `polydrug_days` | Days with ≥ 2 distinct drug categories used simultaneously |
+| `drug_breadth` | Number of distinct drug categories used in the window |
+| `lie_count` | Days where UDS/UDSAB positive but TLFB reported no use |
+| `lie_rate` | `lie_count` ÷ total UDS-positive days |
+
+The `lie_count` feature is a day-level proxy for under-reporting (not substance-matched). A more precise substance-level version is noted as a future improvement.
+
+## Additional Feature Domains
+
+::: {style="font-size: 0.85em;"}
+
+| Domain | Features | Status |
+|---|---|---|
+| Demographics | Age, sex, race, Hispanic ethnicity, education, marital status, housing stability | ✅ |
+| Rx adherence composite | `rx_days`, `rx_categories`, `rx_any_binary` (non-addictive Rx only) | ✅ |
+| Fagerstrom nicotine dependence | FTND total score (0–10) | ⏳ column name |
+| ASI subscores | Drug, alcohol, legal, family, psychiatric, employment, medical | ⏳ column name |
+| Psychiatric comorbidities | Depression, anxiety, PTSD binary flags; comorbidity count | ⏳ column name |
+| Pain × drug interactions | Correlation of daily pain with hard/soft drug use; high-pain-day rate | ⏳ pain score column |
+| Quality of life | Overall, physical, mental subscores | ⏳ column name |
+| Withdrawal trajectory | Slope of COWS/SOWS over the window (linear regression) | ⏳ score column |
+| Study drug concordance | Took assigned MOUD pre-randomization? Took a different MOUD? | ⏳ treatment column |
+| Study site | Masked site identifier | ⏳ confirm column |
+
 :::
-:::
-##### A subsection 
-# Methods 
-## Subjects
-## Analysis software
+
+## Next Steps
+
+1. **Resolve column names** for clinical datasets by running `glimpse()` calls in `building_analysis.R` interactively — this will unlock ~10 additional feature domains
+2. **Join relapse outcome** to the feature matrix at modelling time
+3. **Model development** using a `tidymodels` pipeline:
+   - Cross-validation strategy (nested or stratified by study)
+   - Candidate algorithms: regularized regression (LASSO/ridge), random forest, XGBoost
+   - Evaluation metrics: AUC, calibration, clinical utility
+4. **Treatment matching analysis:** assess whether predictive features differ across MOUD arms
