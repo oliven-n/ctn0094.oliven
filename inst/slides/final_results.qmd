@@ -183,16 +183,16 @@ The `lie_count` feature is a day-level proxy for under-reporting (not substance-
 
 | Domain | Features | Status |
 |---|---|---|
-| Demographics | Age, sex, race, Hispanic ethnicity, education, marital status, housing stability | ✅ |
-| Rx adherence composite | `rx_days`, `rx_categories`, `rx_any_binary` (non-addictive Rx only) | ✅ |
-| Fagerstrom nicotine dependence | FTND total score (0–10) | ⏳ column name |
-| ASI subscores | Drug, alcohol, legal, family, psychiatric, employment, medical | ⏳ column name |
-| Psychiatric comorbidities | Depression, anxiety, PTSD binary flags; comorbidity count | ⏳ column name |
-| Pain × drug interactions | Correlation of daily pain with hard/soft drug use; high-pain-day rate | ⏳ pain score column |
-| Quality of life | Overall, physical, mental subscores | ⏳ column name |
-| Withdrawal trajectory | Slope of COWS/SOWS over the window (linear regression) | ⏳ score column |
-| Study drug concordance | Took assigned MOUD pre-randomization? Took a different MOUD? | ⏳ treatment column |
-| Study site | Masked site identifier | ⏳ confirm column |
+| Demographics | Age, sex, race, Hispanic ethnicity, education, marital status, housing stability | Complete |
+| Rx adherence composite | `rx_days`, `rx_categories`, `rx_any_binary` (non-addictive Rx only) | Complete |
+| Fagerstrom nicotine dependence | FTND total score (0–10) | Column name needed |
+| ASI subscores | Drug, alcohol, legal, family, psychiatric, employment, medical | Column name needed |
+| Psychiatric comorbidities | Depression, anxiety, PTSD binary flags; comorbidity count | Column name needed |
+| Pain × drug interactions | Correlation of daily pain with hard/soft drug use; high-pain-day rate | Pain score column needed |
+| Quality of life | Overall, physical, mental subscores | Column name needed |
+| Withdrawal trajectory | Slope of COWS/SOWS over the window (linear regression) | Score column needed |
+| Study drug concordance | Took assigned MOUD pre-randomization? Took a different MOUD? | Treatment column needed |
+| Study site | Masked site identifier | Confirm column name |
 
 :::
 
