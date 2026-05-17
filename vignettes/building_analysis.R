@@ -1,5 +1,5 @@
 # ════════════════════════════════════════════════════════════════════
-# building_analysis.R
+# vignettes/building_analysis.R
 #
 # Builds the analysis tibble: one row per participant, one column
 # per feature. Follows Features_To_Include_Accepted_Suggestions.Rmd
@@ -9,6 +9,10 @@
 #
 # Window for all longitudinal data: days -28 (inclusive) to 0
 # (exclusive). Gives exactly 4 of each weekday per person.
+#
+# SOURCED BY: vignettes/analysis.qmd
+# Sections marked TODO return a who-only tibble until column names
+# are resolved interactively via the glimpse() calls.
 # ════════════════════════════════════════════════════════════════════
 
 
@@ -408,11 +412,10 @@ pain_window <- pain |>
 
 pain_main_feats <- pain_window |>
   group_by(who) |>
-  summarize(
-    pain_mean = mean(pain_score, na.rm = TRUE),
-    pain_max  = max(pain_score,  na.rm = TRUE),
-    .groups   = "drop"
-  )
+  summarize(.groups = "drop")
+  # TODO: add after resolving pain_score column:
+  # pain_mean = mean(pain_score, na.rm = TRUE),
+  # pain_max  = max(pain_score,  na.rm = TRUE),
 
 
 # ── 13. Psychiatric features ──────────────────────────────────────
@@ -450,7 +453,7 @@ glimpse(qol)
 
 qol_feats <- qol |>
   group_by(who) |>
-  slice_min(when, n = 1, with_ties = FALSE) |>  # baseline only
+  slice(1) |>  # baseline only (slice_min(when) omitted until `when` column confirmed)
   ungroup() |>
   transmute(
     who
@@ -560,35 +563,37 @@ pre_moud_use <- all_drugs_filtered |>
   filter(as.character(what_grouped) %in% c("Buprenorphine", "Suboxone", "Methadone")) |>
   distinct(who, what_grouped)
 
-# TODO: replace <TREATMENT_COL> with actual column name from randomization
-# The treatment value strings below are guesses — adjust to match actual levels.
+# TODO: replace <TREATMENT_COL> with the actual column name from randomization,
+# then swap the placeholder below for the full implementation sketch (commented out).
 study_drug_feats <- first_rand |>
-  select(who, treatment = everything(), -who) |>   # TODO: replace with select(who, treatment = <TREATMENT_COL>)
-  left_join(pre_moud_use, by = "who") |>
-  mutate(
-    # Map treatment to the drug group(s) that count as "their drug"
-    # TODO: adjust the grepl patterns to match actual treatment level strings
-    took_their_study_drug = case_when(
-      grepl("buprenorphine|suboxone|naloxone", treatment, ignore.case = TRUE) &
-        as.character(what_grouped) %in% c("Buprenorphine", "Suboxone") ~ 1L,
-      grepl("methadone", treatment, ignore.case = TRUE) &
-        as.character(what_grouped) == "Methadone" ~ 1L,
-      TRUE ~ 0L
-    ),
-    took_different_study_drug = case_when(
-      grepl("buprenorphine|suboxone|naloxone", treatment, ignore.case = TRUE) &
-        as.character(what_grouped) == "Methadone" ~ 1L,
-      grepl("methadone", treatment, ignore.case = TRUE) &
-        as.character(what_grouped) %in% c("Buprenorphine", "Suboxone") ~ 1L,
-      TRUE ~ 0L
-    )
-  ) |>
-  group_by(who) |>
-  summarize(
-    took_their_study_drug     = max(took_their_study_drug,     na.rm = TRUE),
-    took_different_study_drug = max(took_different_study_drug, na.rm = TRUE),
-    .groups = "drop"
-  )
+  transmute(who)
+  # Full implementation — uncomment after resolving treatment column name:
+  #
+  # study_drug_feats <- first_rand |>
+  #   select(who, treatment = <TREATMENT_COL>) |>
+  #   left_join(pre_moud_use, by = "who") |>
+  #   mutate(
+  #     took_their_study_drug = case_when(
+  #       grepl("buprenorphine|suboxone|naloxone", treatment, ignore.case = TRUE) &
+  #         as.character(what_grouped) %in% c("Buprenorphine", "Suboxone") ~ 1L,
+  #       grepl("methadone", treatment, ignore.case = TRUE) &
+  #         as.character(what_grouped) == "Methadone" ~ 1L,
+  #       TRUE ~ 0L
+  #     ),
+  #     took_different_study_drug = case_when(
+  #       grepl("buprenorphine|suboxone|naloxone", treatment, ignore.case = TRUE) &
+  #         as.character(what_grouped) == "Methadone" ~ 1L,
+  #       grepl("methadone", treatment, ignore.case = TRUE) &
+  #         as.character(what_grouped) %in% c("Buprenorphine", "Suboxone") ~ 1L,
+  #       TRUE ~ 0L
+  #     )
+  #   ) |>
+  #   group_by(who) |>
+  #   summarize(
+  #     took_their_study_drug     = max(took_their_study_drug,     na.rm = TRUE),
+  #     took_different_study_drug = max(took_different_study_drug, na.rm = TRUE),
+  #     .groups = "drop"
+  #   )
 
 
 # ── 21. Database Notes: Pain × hard drug interaction ─────────────
@@ -622,21 +627,20 @@ pain_hard_daily <- pain |>
 
 pain_hard_feats <- pain_hard_daily |>
   group_by(who) |>
-  summarize(
-    pain_harddrug_corr = {
-      nd <- sum(harddrug_use)
-      if (nd == 0L) 0
-      else if (nd == n()) NA_real_
-      else suppressWarnings(cor(pain_score, harddrug_use, use = "complete.obs"))
-    },
-    pain_highrisk_harddrug_rate = {
-      med <- median(pain_score, na.rm = TRUE)
-      high_pain_days <- pain_score > med
-      if (sum(high_pain_days, na.rm = TRUE) == 0L) NA_real_
-      else mean(harddrug_use[high_pain_days], na.rm = TRUE)
-    },
-    .groups = "drop"
-  )
+  summarize(.groups = "drop")
+  # TODO: add after resolving pain_score column:
+  # pain_harddrug_corr = {
+  #   nd <- sum(harddrug_use)
+  #   if (nd == 0L) 0
+  #   else if (nd == n()) NA_real_
+  #   else suppressWarnings(cor(pain_score, harddrug_use, use = "complete.obs"))
+  # },
+  # pain_highrisk_harddrug_rate = {
+  #   med <- median(pain_score, na.rm = TRUE)
+  #   high_pain_days <- pain_score > med
+  #   if (sum(high_pain_days, na.rm = TRUE) == 0L) NA_real_
+  #   else mean(harddrug_use[high_pain_days], na.rm = TRUE)
+  # },
 
 
 # ── 22. Database Notes: Pain × soft drug interaction ─────────────
@@ -664,21 +668,20 @@ pain_soft_daily <- pain |>
 
 pain_soft_feats <- pain_soft_daily |>
   group_by(who) |>
-  summarize(
-    pain_softdrug_corr = {
-      nd <- sum(softdrug_use)
-      if (nd == 0L) 0
-      else if (nd == n()) NA_real_
-      else suppressWarnings(cor(pain_score, softdrug_use, use = "complete.obs"))
-    },
-    pain_highrisk_softdrug_rate = {
-      med <- median(pain_score, na.rm = TRUE)
-      high_pain_days <- pain_score > med
-      if (sum(high_pain_days, na.rm = TRUE) == 0L) NA_real_
-      else mean(softdrug_use[high_pain_days], na.rm = TRUE)
-    },
-    .groups = "drop"
-  )
+  summarize(.groups = "drop")
+  # TODO: add after resolving pain_score column:
+  # pain_softdrug_corr = {
+  #   nd <- sum(softdrug_use)
+  #   if (nd == 0L) 0
+  #   else if (nd == n()) NA_real_
+  #   else suppressWarnings(cor(pain_score, softdrug_use, use = "complete.obs"))
+  # },
+  # pain_highrisk_softdrug_rate = {
+  #   med <- median(pain_score, na.rm = TRUE)
+  #   high_pain_days <- pain_score > med
+  #   if (sum(high_pain_days, na.rm = TRUE) == 0L) NA_real_
+  #   else mean(softdrug_use[high_pain_days], na.rm = TRUE)
+  # },
 
 
 # ── 23. Database Notes: Withdrawal trajectory ─────────────────────
@@ -696,15 +699,13 @@ glimpse(withdrawal)
 withdrawal_traj_feats <- withdrawal |>
   filter(when >= -28, when < 0) |>
   group_by(who) |>
-  summarize(
-    withdrawal_slope = if (n() >= 2L) {
-      coef(lm(withdrawal_score ~ when, data = cur_data()))[["when"]]
-      # TODO: replace withdrawal_score with actual column name
-    } else {
-      NA_real_
-    },
-    .groups = "drop"
-  )
+  summarize(.groups = "drop")
+  # TODO: add after resolving withdrawal score column:
+  # withdrawal_slope = if (n() >= 2L) {
+  #   coef(lm(<SCORE_COL> ~ when, data = cur_data()))[["when"]]
+  # } else {
+  #   NA_real_
+  # },
 
 
 # ── 24. Database Notes: Medication adherence composite ────────────

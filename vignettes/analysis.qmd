@@ -4,142 +4,154 @@ author: "Nat Oliven"
 date: last-modified
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{your_title_goes_here}
+  %\VignetteIndexEntry{Predicting treatment response for people undergoing care for OUD}
   %\VignetteEngine{quarto::html}
   %\VignetteEncoding{UTF-8}
 knitr:
-  opts_chunk:        ############ set global options ############
-    collapse: true   # keep code from blocks together (if shown)
-    echo: false      # don't show code
-    message: true    # show messages
-    warning: true    # show warnings
-    error: true      # show error messages
-    comment: ""      # don't show ## with printed output
-    dpi: 100         # image resolution (typically 300 for publication)
-    fig-width: 6.5   # figure width
-    fig-height: 4.0  # figure height
+  opts_chunk:
+    collapse: true
+    echo: false
+    message: false
+    warning: false
+    error: false
+    comment: ""
+    dpi: 100
+    fig-width: 6.5
+    fig-height: 4.0
     R.options:
-      digits: 3      # round to three digits
+      digits: 3
 editor: source
 bibliography: [references.bib, packages.bib]
 csl: apa.csl
 ---
 
-```{r load-tidyverse-tidymodels}
-#| echo: false
-
+```{r load-packages}
 library(conflicted)
 suppressPackageStartupMessages(library(tidymodels))
 tidymodels_prefer()
 suppressPackageStartupMessages(library(tidyverse))
-
-# suppress "`summarise()` has grouped output by " messages
+library(public.ctn0094data)
+library(gtsummary)
+library(knitr)
+conflicts_prefer(dplyr::filter)
 options(dplyr.summarise.inform = FALSE)
 ```
 
-```{r load-other-packages}
-library(glue)  # for glue()
-library(rUM)  # needed for the bibliography
-library(rio)  # for import()
-
-# gtsummary for tbl_summary(), add_n(), add_p(), modify_header(), bold_labels()
-suppressPackageStartupMessages(library(gtsummary))
-```
-
-```{r load-data}
-# If you want to import a dataset which is not an R file, put its name inside
-# the "" below.  For example:
-# raw_data <- import("the_excel.xlsx")
-
-# If your datasets is an Excel file saved in the data folder, add a path like:
-# raw_data <- import("data/the_excel.xlsx")
-```
-
-```{r make-analysis}
-# preprocess your data and ultimately make a dataset called analysis
-analysis <- mtcars |>
-  mutate(auto_man = if_else(am == 0, "Automatic", "Manual")) |>
-  select(mpg, auto_man)
+```{r build-analysis}
+#| cache: true
+source("building_analysis.R")
 ```
 
 # Abstract
 
+This study uses data from three NIDA Clinical Trials Network studies (CTN-0028, CTN-0030, CTN-0051) to build a predictive model of treatment response in people with opioid use disorder (OUD). We construct a pre-treatment feature matrix from behavioral, substance use, demographic, and clinical data in the 28 days before randomization, and evaluate whether these features predict relapse during the treatment period.
+
 # Introduction
-+ Opioid Use Disorder is a problem 
-  + Deaths
-  + Costs
-+ Medication for OUD is often useful 
-  + Evidence
-+ We want to match people to the right treatment so we will see if we can predict response to treatment.
+
+Opioid use disorder is associated with substantial mortality, morbidity, and economic burden in the United States. Medications for OUD (MOUD) — including methadone, buprenorphine-naloxone, and extended-release naltrexone — are effective treatments, yet individual response varies considerably. Matching patients to the treatment most likely to benefit them remains a central challenge in addiction medicine.
+
+The CTN-0094 harmonized dataset combines three randomized clinical trials comparing MOUD regimens in opioid-dependent adults. By pooling data across studies, we have sufficient sample size to examine whether pre-treatment characteristics predict treatment response. The goal of this analysis is to build and evaluate a feature matrix capturing the 28 days prior to randomization, which will serve as input to predictive models of relapse outcomes.
 
 # Methods
-+ Predictors come from many domains 
-+ Demographic 
-  + Sex 
-  + Age
-  + Race
-  + Education
-+ Psych
-  + Brain trauma
-  + Bipolar
-  + ADHD
 
-Analyses were conducted with `r stringr::word(R.Version()$version.string, 1, 3)` with the `tidyverse` (`r packageVersion("tidyverse")`), `rUM` (`r packageVersion("rUM")`), `gtsummary` (`r packageVersion("gtsummary")`) packages used to preprocess and summarize data. [@R-base; @R-tidyverse; @tidyverse2019; @R-rUM; @R-gtsummary]
+## Data
+
+Data come from three NIDA Clinical Trials Network studies harmonized in the `public.ctn0094data` R package: CTN-0028 (methadone vs. buprenorphine-naloxone; n = 1,920), CTN-0030 (buprenorphine-naloxone only; n = 868), and CTN-0051 (extended-release naltrexone vs. buprenorphine-naloxone; n = 772). Only participants' first randomization is included; the CTN-0030 re-randomization step is excluded via an inner join on the earliest randomization date per participant.
+
+## Feature Engineering
+
+All longitudinal features are derived from a 28-day pre-randomization window (days −28 inclusive to day 0 exclusive), providing exactly four of each weekday per participant. Substance use features are computed from the `all_drugs` dataset, which is more granular than the standalone `tlfb` table and covers multiple detection sources (TLFB self-report, urine drug screen, and urine drug screen with alcohol biomarker). Rare drug categories (<10 events in the window) and illicit categories used by fewer than 1% of participants are excluded before feature computation. Per-drug features include days of use, binary use indicator, and longest consecutive streak where clinically meaningful. Additional feature domains include demographics, self-reported behavior risk, addiction severity, psychiatric comorbidity, quality of life, pain, nicotine dependence, and withdrawal severity. Feature engineering is implemented in `building_analysis.R`; sections requiring dataset column name resolution are marked with TODO and return placeholder columns until resolved.
+
+Analyses were conducted with `r stringr::word(R.Version()$version.string, 1, 3)` with the `tidyverse` (`r packageVersion("tidyverse")`), `tidymodels` (`r packageVersion("tidymodels")`), and `gtsummary` (`r packageVersion("gtsummary")`) packages. [@R-base; @R-tidyverse; @tidyverse2019; @R-gtsummary]
 
 # Results
 
-```{r tbl-table1}
-#| tbl-cap: |
-#|   Your real caption belongs here.  Remember that cross references to tables
-#|   use labels for the code chunk starting with tbl-.
+## Participants
 
-# To learn how to use tbl_summary look https://www.danieldsjoberg.com/gtsummary/
-analysis |>
-  tbl_summary(
-    include = c(everything()), # choose your variables here
-    # change auto_man to the name of your column variable or delete by = auto_man
-    by = auto_man, # split table by group
-    missing = "no" # don't list missing data separately
+```{r tbl-participants}
+#| tbl-cap: "Randomized participants by CTN study."
+
+analysis_base |>
+  count(project) |>
+  mutate(project = as.character(project)) |>
+  kable(col.names = c("Study", "N"), align = "lr")
+```
+
+A total of `r nrow(analysis_base)` participants across `r n_distinct(analysis_base$project)` studies were included after restricting to first randomizations (@tbl-participants).
+
+## Participant Characteristics
+
+```{r tbl-demographics}
+#| tbl-cap: "Baseline participant characteristics by study."
+
+analysis_tibble |>
+  select(project, age, is_male, race, is_hispanic,
+         education, is_living_stable) |>
+  mutate(
+    is_male         = factor(is_male,         levels = c(1, 0), labels = c("Yes", "No")),
+    is_hispanic     = factor(is_hispanic,     levels = c(1, 0), labels = c("Yes", "No")),
+    is_living_stable = factor(is_living_stable, levels = c(1, 0), labels = c("Yes", "No"))
   ) |>
-  # add_n() |> # add column with total number of non-missing observations
-  # add_p() |> # test for a difference between groups
-  modify_header(label = "") |> # update the column header to be blank
+  tbl_summary(
+    by = project,
+    include = c(age, is_male, race, is_hispanic, education, is_living_stable),
+    label = list(
+      age              ~ "Age (years)",
+      is_male          ~ "Male",
+      race             ~ "Race",
+      is_hispanic      ~ "Hispanic ethnicity",
+      education        ~ "Education",
+      is_living_stable ~ "Stable housing"
+    ),
+    missing = "no"
+  ) |>
+  modify_header(label = "") |>
   bold_labels()
 ```
 
-As can be seen in @tbl-table1 ....
+## Drug Use in the Pre-Treatment Window
 
-```{r fig-figure-1}
-#| fig-cap: |
-#|   Your real caption belongs here.  Remember that cross references to figures
-#|   use labels for the code chunk starting with fig-.
+```{r tbl-drug-prevalence}
+#| tbl-cap: "Substance use categories observed in the 28 days before randomization (days −28 to −1). N users and percentage are relative to the analysis sample."
 
-# To learn how to use ggplot start here: https://ggplot2.tidyverse.org/#learning-ggplot2
-analysis |>
-  ggplot() +
-		labs(
-			title = "Your short title goes here.",
-			caption = "Your data sources/citation goes here."
-		) +
-		geom_blank()
-		# remove geom_blank() and add details here
+n_analysis <- nrow(analysis_base)
+
+all_drugs_filtered |>
+  semi_join(analysis_base, by = "who") |>
+  distinct(who, what_grouped) |>
+  group_by(what_grouped) |>
+  summarize(n_users = n(), .groups = "drop") |>
+  mutate(
+    pct = round(n_users / n_analysis * 100, 1),
+    what_grouped = as.character(what_grouped)
+  ) |>
+  arrange(desc(n_users)) |>
+  kable(
+    col.names = c("Substance category", "N users", "% of sample"),
+    align = "lrr"
+  )
 ```
 
-As can be seen in @fig-figure-1 ...
+## Feature Matrix
+
+```{r feature-dimensions}
+n_participants <- nrow(analysis_tibble)
+n_features     <- ncol(analysis_tibble) - 2L   # subtract who and project
+```
+
+The current feature matrix contains **`r n_participants` participants** and **`r n_features` feature columns** (excluding participant ID and study). Feature domains that depend on unresolved dataset column names (ASI composites, Fagerstrom score, pain scores, psychiatric diagnoses, quality of life, treatment arm, risk behavior, and withdrawal trajectory) contribute placeholder columns and will be expanded once column names are confirmed via the `glimpse()` calls in `building_analysis.R`.
 
 # Discussion
+
+The feature matrix described here represents the pre-treatment behavioral and clinical profile for each randomized participant across the three CTN studies. Once the remaining TODO sections are resolved, the full feature set will include substance use history, demographic characteristics, psychiatric comorbidity, pain, nicotine dependence, social risk behavior, IV drug use, withdrawal severity, medication adherence, and study site. These features will be used to train and evaluate predictive models of relapse, with the aim of informing treatment matching for OUD.
 
 # References {.unnumbered}
 
 ```{r make-references}
 #| include: false
 
-# automatically create a bib database for loaded R packages & rUM
 knitr::write_bib(
-  c(
-    .packages(),
-    "rUM"
-  ),
+  c(.packages(), "rUM"),
   "packages.bib"
 )
 ```
