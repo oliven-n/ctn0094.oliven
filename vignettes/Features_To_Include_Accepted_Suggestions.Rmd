@@ -1,0 +1,708 @@
+---
+title: "Features to Include"
+author: "Nat Oliven"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output: html_document
+---
+
+```{r setup, echo=FALSE, message=FALSE, warning=FALSE}
+library(conflicted)
+suppressPackageStartupMessages(library(tidyverse))
+library(public.ctn0094data)
+conflicts_prefer(dplyr::filter)
+```
+
+# Formatting Conventions For This Document
+
+- **Header 1's** are datasets, and "Database Notes" about the data package as a whole
+- **Header 2's** are variables within the datasets, and "Dataset Notes" about that dataset as a whole (can include photos of a table, descriptive graphics, anything that gives us a sense of what we're looking at)
+  - "Who" is a redundant column that we don't need to investigate every time, include variables of note
+  - Ideally we'd have all 46 variables, but maybe the less interesting ones don't get explored.
+- **Header 3's** are always written "Feature proposal", with text underneath explaining what the feature is and why it should be included.
+  - When a "Feature proposal" pertains to just one variable in the dataset, put it beneath that variable's "Header 2"
+    - If the raw column itself is a feature proposal, that's ok! Just write this explicitly and explain why it requires no further filtering
+  - When a "Feature proposal" pertains to multiple variables in the same dataset, put the feature proposal in "Dataset Notes" for that dataset ("Dataset Notes" will be a Header 2).
+- When the "Feature proposal" pertains to multiple variables in different datasets, put the feature proposal in the "Database Notes"
+- To make headers, highlight your text, and then go to Format > Paragraph Styles and select the appropriate header.
+
+---
+
+# Data Set Description
+
+Data sets in package `public.ctn0094data`:
+
+| Dataset                     | Description                                            |
+|-----------------------------|--------------------------------------------------------|
+| `all_drugs`                 | All drugs taken                                        |
+| `asi`                       | Did patient use intravenous drugs                      |
+| `demographics`              | Patient demographics                                   |
+| `detox`                     | Start and Stop of Detox                                |
+| `everybody`                 | Everybody with any data                                |
+| `fagerstrom`                | Fagerstrom Test for Nicotine Dependence                |
+| `first_survey`              | First Survey Date                                      |
+| `meta_study_length`         | Metadata About Study Length                            |
+| `meta_substance_groups_uds` | Metadata About UDS Groupings                           |
+| `pain`                      | Self-Reported Pain                                     |
+| `psychiatric`               | Psychiatric History                                    |
+| `qol`                       | Quality of Life                                        |
+| `randomization`             | Randomization Data                                     |
+| `rbs`                       | Risk Behavior Survey                                   |
+| `rbs_iv`                    | Risk Behavior Survey IV drug use information           |
+| `screening_date`            | Screening Date Information                             |
+| `sex`                       | Sexual Activity in Risk Behavior Survey                |
+| `site_masked`               | Site Regrouped                                         |
+| `tlfb`                      | Timeline Followback (TLFB) Drug Use Information        |
+| `treatment`                 | Amount of Study Drug Per Day                           |
+| `uds`                       | Urine Drug Screening (UDS) Results                     |
+| `uds_temp`                  | Urine Drug Screening (UDS) Temperature                 |
+| `visit`                     | Patient Visit Data                                     |
+| `withdrawal`                | Patient Withdrawal Symptoms Per Day                    |
+| `withdrawal_pre_post`       | Patient Withdrawal Symptoms Pre and Post Induction     |
+
+# all_drugs
+
+Rather than using tlfb, I cleaned up all_drugs to give me more granular control over the rule. I axed any meds with less than 10 uses. I grouped together all opioids. I left out certain illicit drugs with significance in the literature related to opioid relapse (fent, methamphetamines, cocaine, etc.) separate. I kept hard and light drinking separate.
+
+```{r all-drugs-map}
+drug_map <- c(
+  # opioid group, but keep heroin/fentanyl/buprenorphine/suboxone separate
+  "Acetaminophen"          = "Opioid",
+  "Codeine"                = "Opioid",
+  "Hydrocodone"            = "Opioid",
+  "Hydromorphone"          = "Opioid",
+  "Merperidine"            = "Opioid",
+  "Morphine"               = "Opioid",
+  "Nalbuphine"             = "Opioid",
+  "Opium"                  = "Opioid",
+  "Oxycodone"              = "Opioid",
+  "Oxymorphone"            = "Opioid",
+  "Propoxyphene"           = "Opioid",
+  "Tramadol"               = "Opioid",
+
+  # sedatives, but keep benzodiazepines separate
+  "Sedative-Hypnotic"      = "Sedatives",
+  "Barbiturate"            = "Sedatives",
+
+  # antidepressants
+  "Trazodone"              = "Antidepressant",
+  "Tryclic-Antidepressant" = "Antidepressant",
+
+  # analgesics
+  "Gabapentin"             = "Analgesic",
+
+  # naming / grouping cleanup
+  "Thc"                    = "Cannabinoids",
+  "K2"                     = "Cannabinoids",
+  "Musclerelax"            = "Muscle Relaxant",
+  "Mdma"                   = "MDMA/Hallucinogen",
+  "Hallucinogen"           = "MDMA/Hallucinogen",
+  "Alcohol"                = "Alcohol Missing Amnt"
+)
+
+all_drugs_grouped <- all_drugs |>
+  mutate(
+    what_grouped = ifelse(
+      what %in% names(drug_map),
+      drug_map[as.character(what)],
+      as.character(what)
+    ),
+    what_grouped = factor(what_grouped)
+  )
+```
+
+```{r all-drugs-filtered}
+# Primary filter: keep only categories with >= 10 use events in window
+drugs_to_keep <- all_drugs_grouped |>
+  filter(when < 0, when >= -28) |>
+  count(what_grouped) |>
+  filter(n >= 10) |>
+  pull(what_grouped)
+
+all_drugs_filtered <- all_drugs_grouped |>
+  filter(when < 0, when >= -28) |>
+  filter(what_grouped %in% drugs_to_keep)
+
+# Secondary filter: drop illicit categories used by < 1% of
+# participants. Prescribed / legal categories are exempt because
+# even rare use carries signal (medication adherence, comorbidity).
+prescribed_or_legal <- c(
+  "Buprenorphine", "Suboxone", "Methadone",
+  "Benzodiazepine", "Sedatives", "Opioid",
+  "Muscle Relaxant", "Analgesic", "Antidepressant", "Antiemetic",
+  "Heavy Drinking", "Light Drinking", "Alcohol Missing Amnt",
+  "Cannabinoids", "Nicotine", "Caffeine"
+)
+
+total_persons_all <- n_distinct(all_drugs_filtered$who)
+
+illicit_low_prev <- all_drugs_filtered |>
+  distinct(who, what_grouped) |>
+  group_by(what_grouped) |>
+  summarize(n_users = n(), .groups = "drop") |>
+  mutate(pct_users = n_users / total_persons_all * 100) |>
+  filter(pct_users < 1,
+         !as.character(what_grouped) %in% prescribed_or_legal) |>
+  pull(what_grouped)
+
+all_drugs_filtered <- all_drugs_filtered |>
+  filter(!what_grouped %in% illicit_low_prev)
+
+all_drugs_filtered |>
+  group_by(what_grouped) |>
+  count() |>
+  arrange(desc(n)) |>
+  print(n = 30)
+```
+
+### Feature proposals: Days per person
+
+For each drug category below, compute total days in the window −28 to −1 where **any source** (TFB, UDS, or UDSAB) detected the substance. Count each day at most once per drug per person (no double-counting across sources).
+
+Include only drug categories that pass the `>=10 events` filter. Verify the final list by running `all_drugs_filtered |> count(what_grouped)` before building the analysis tibble.
+
+| Feature name | Drug category | Rationale for inclusion |
+|---|---|---|
+| `heroin_days` | Heroin | Primary opioid of abuse; strongest relapse predictor |
+| `fentanyl_days` | Fentanyl | Increasingly prevalent; distinct overdose pharmacology |
+| `opioid_days` | Opioid (prescription group) | Pre-study prescription opioid misuse as a composite |
+| `cocaine_days` | Cocaine | Stimulant co-use is associated with OUD relapse |
+| `crack_days` | Crack cocaine | Distinct use pattern from powder cocaine; include if ≥10 events |
+| `methamphetamine_days` | Methamphetamine | Stimulant; increasingly common in OUD populations |
+| `benzodiazepine_days` | Benzodiazepine | Cross-addiction; high overdose risk; strong predictor |
+| `thc_days` | THC | Complex relationship with opioid craving; include |
+| `alcohol_hard_days` | Alcohol (hard/heavy) | Heavy drinking directly predicts opioid relapse |
+| `alcohol_light_days` | Alcohol (light/moderate) | Lower risk but captures broader drinking behavior |
+| `buprenorphine_days` | Buprenorphine | Pre-study MOUD exposure; see "Took THEIR study drug" feature |
+| `suboxone_days` | Suboxone | Treated as buprenorphine-equivalent per Nat's note |
+| `methadone_days` | Methadone | Pre-study MOUD exposure |
+| `sedatives_days` *(conditional)* | Sedatives | Include if ≥10 events; non-benzo CNS depressants |
+| `analgesic_days` *(conditional)* | Analgesic (Gabapentin) | Include if ≥10 events; growing misuse concern in OUD |
+| `antidepressant_days` *(conditional)* | Antidepressant | Include if ≥10 events; functions as prescription adherence marker |
+| ~~`caffeine_days`~~ | Caffeine | **Omit** — no established link to OUD relapse outcomes |
+| `nicotine_days` *(conditional)* | Nicotine | Include if ≥10 events; comorbidity (better measured by Fagerstrom, but days count adds information) |
+
+### Feature proposals: Binary (any use)
+
+For each drug in the days table above, also compute a binary 0/1 flag: did the person use this substance **at all** in the −28 to −1 window (any source, any day)?
+
+Binary features are especially useful for models with linearity assumptions — the difference between 0 and 1 days should often count more than the difference between, say, 12 and 13 days.
+
+Also include `nicotine_binary` even if `nicotine_days` is omitted (ever-smoker status adds independent predictive value over the continuous Fagerstrom score).
+
+### Feature proposals: Longest streak
+
+Compute the longest consecutive-day streak for **addictive substances only**. Streak length captures compulsive, dependent use patterns beyond what a total-days count reflects.
+
+**Include streaks for:**
+
+| Feature name | Drug category | Justification |
+|---|---|---|
+| `heroin_streak` | Heroin | Highly addictive; streak reflects dependence severity |
+| `fentanyl_streak` | Fentanyl | Same rationale as heroin |
+| `opioid_streak` | Opioid (prescription group) | Compulsive prescription opioid use pattern |
+| `cocaine_streak` | Cocaine | Stimulant use disorder; binge pattern captured by streak |
+| `crack_streak` | Crack cocaine | Same rationale as cocaine |
+| `methamphetamine_streak` | Methamphetamine | High addiction potential; streak is meaningful |
+| `benzodiazepine_streak` | Benzodiazepine | Physical dependence develops; streak indicates severity |
+| `alcohol_hard_streak` | Alcohol (hard) | Heavy drinking streaks predict relapse more than isolated events |
+| `thc_streak` | THC | Cannabis use disorder is real; streak captures it |
+| `sedatives_streak` *(conditional)* | Sedatives | Include if ≥10 events; same logic as benzos |
+
+**Omit streaks for:**
+
+- `buprenorphine`, `suboxone`, `methadone` — these are medications; a long streak is desirable adherence, not compulsive use
+- `antidepressant`, `analgesic` — prescription medications; streak ≠ addictive behavior
+- `alcohol_light` — light drinking streaks are less clinically meaningful
+- `caffeine` — omitted entirely
+
+### Feature Proposal
+
+Heavy drinking events - light drinking events.
+
+Measures: restraint.
+
+Include heavy drinking count and light drinking count as **separate features** in addition to (or instead of) their difference. The difference `heavy - light` collapses information: a person with 10 heavy and 5 light days is very different from one with 2 heavy and 0 light days, yet both produce the same difference of +5. The individual counts are independently predictive of relapse (Witkiewitz & Marlatt 2004), and tree-based ML models will recover the interaction automatically if both counts are present. Keeping them separate costs one column and loses nothing.
+
+### Feature Proposal
+
+Took THEIR study drug before study
+
+### Feature Proposal
+
+Took DIFFERENT study drug before study (e.g. their study put them on Bup but they had attempted to get clean and failed pre study with xr-ntx)
+
+Notes for above 2 features:
+
+What are the study drugs?
+
+- CTN-0028: Methadone vs Buprenorphine-Naloxone
+- CTN-0030: Only Buprenorphine-Naloxone (Suboxone)
+- CTN-0051: XR Naltrexone vs Buprenorphine-Naloxone
+
+- You need to not only get what study but also what drug they were randomized to
+- In the `all_drugs_filtered` table I am using, Buprenorphine and Suboxone are separate. If someone is randomized to Suboxone but took Buprenorphine prior, count this as having taken THEIR study drug. They are substantially similar.
+- We do not need "Took no study drug before study" because it should be collinear with the above two and probably would break stuff
+
+### Feature proposal
+
+Lie count. The number of days (not drugs, etc. days.) each person's drug results self reported from tlfb did not match their reports from UDS or UDSAB. If they over-reported something in tlfb that was not in uds/udsab, do not up the count. Only up the days count for under-reporting.
+
+Also compute a **normalized lie rate**: `lie_count / total_drug_positive_days` (where `total_drug_positive_days` is the number of days UDS or UDSAB detected any substance). The raw count is confounded by baseline drug use intensity — a person who used drugs 20 days has more opportunities to under-report than one who used 5 days. The rate controls for this. Include both the raw count and the rate as separate features. If `total_drug_positive_days = 0`, set rate to 0.
+
+### Feature proposal
+
+Drug grouping validation notes:
+
+1. **⚠️ WARNING — Acetaminophen in the "Opioid" group**: Acetaminophen (APAP) is NOT an opioid. It likely appears here as the non-opioid component of combination pills (Vicodin = hydrocodone + APAP; Percocet = oxycodone + APAP), where both ingredients are logged as separate rows. If so, including APAP in the "Opioid" group **double-counts** those use events — `opioid_days` gets inflated by APAP rows that are already covered by the hydrocodone/oxycodone rows. Recommended: verify whether Acetaminophen rows have a co-occurring opioid on the same day for the same person. If yes in the large majority of cases, remove `"Acetaminophen" = "Opioid"` from `drug_map` entirely.
+
+2. **CONSIDER — Gabapentin standalone instead of "Analgesic"**: In OUD populations, gabapentin is a drug of misuse, not simply a prescribed pain medication. It potentiates opioid euphoria and is used illicitly to manage withdrawal symptoms. Grouping it as "Analgesic" conflates it with benign prescription-medication use. Recommended: remove `"Gabapentin" = "Analgesic"` from `drug_map` so it keeps its own name as a standalone category.
+
+### Feature proposal
+
+**Polydrug use days**: the number of days in the -28 to 0 window on which the participant used 2 or more distinct drug categories simultaneously (as recorded in `all_drugs_filtered`). Polydrug use at baseline is a consistent predictor of worse OUD treatment outcomes (Shand et al. 2011; Kidorf et al. 2004) and captures a severity dimension not captured by any single-drug count.
+
+## Dataset Notes
+
+### Prescribed / legal drug categories in all_drugs_filtered
+
+The following categories surviving the filter are **prescribed medications or legal substances** — they should be treated differently from illicit drugs in feature construction (streak semantics are inverted; medication adherence signal; kept even at low prevalence):
+
+| Category | Type | Notes |
+|---|---|---|
+| `Buprenorphine` | Prescribed MOUD | Study medication / prior treatment |
+| `Suboxone` | Prescribed MOUD | Study medication / prior treatment |
+| `Methadone` | Prescribed MOUD | Study medication / prior treatment |
+| `Opioid` | Prescribed opioid group | Prescription misuse; may overlap with legitimate Rx |
+| `Benzodiazepine` | Prescribed CNS depressant | Addictive but prescribed; streak ≠ compulsion |
+| `Sedatives` | Prescribed CNS depressant | Non-benzo hypnotics/barbiturates |
+| `Antidepressant` | Prescribed psychiatric | Medication adherence marker |
+| `Analgesic` | Prescribed (Gabapentin) | Increasingly misused but still Rx-origin |
+| `Muscle Relaxant` | Prescribed | Operationalises "non-addictive medication" feature |
+| `Antiemetic` | Prescribed | Anti-nausea (e.g. ondansetron); adherence marker |
+| `Heavy Drinking` | Legal | Substance of concern but not illicit |
+| `Light Drinking` | Legal | |
+| `Alcohol Missing Amnt` | Legal | Unclassified drinking records |
+| `Cannabinoids` | Legal/borderline | THC + K2; legal in some states during trial period |
+| `Nicotine` | Legal | |
+| `Caffeine` | Legal | Likely omitted from features; near-universal use |
+
+**Why this matters:** The secondary prevalence filter (drop illicit drugs used by < 1% of participants) explicitly exempts all categories above. The prescribed categories also inform the medication adherence composite feature — see Database Notes.
+
+### Feature proposal
+
+**Total unique drug categories used** in the -28 to 0 window. A scalar measure of the breadth of substance use, independently of individual drug counts. Higher drug-use breadth predicts worse treatment retention (Stitzer & Sigmon 2006).
+
+# asi
+
+## Dataset Notes
+
+```{r asi-overview}
+glimpse(asi)
+```
+
+### Feature proposal
+
+**IV drug use binary (ASI)**: Whether the participant has ever used drugs intravenously, as recorded in the `asi` dataset. IV drug use is associated with more severe OUD, higher HIV risk, and worse treatment outcomes (Roux et al. 2014; Gossop et al. 2002). This is distinct from `rbs_iv` which captures recent IV behavior — the ASI item captures lifetime history.
+
+### Feature proposal
+
+**ASI composite scores**: If the dataset contains Addiction Severity Index composite subscores (drug, alcohol, family/social, legal, psychiatric, employment, medical), include all of them. The ASI drug composite is among the strongest validated predictors of OUD treatment outcome (McLellan et al. 1992). The family/social composite captures social support deficits. The psychiatric composite captures comorbidity load. All seven composites are defensible inclusions under current clinical consensus.
+
+# demographics
+
+## who
+
+## age
+
+```{r age-plot}
+demographics |>
+  left_join(everybody, by = "who") |>
+  ggplot(aes(x = age)) +
+  geom_histogram() +
+  facet_wrap(~project)
+```
+
+In addition to raw `age`, consider including **age at first opioid use** if available in the data (check `asi` or `rbs`). Earlier age of first use is a robust predictor of worse outcomes (Anthony & Petronis 1995). If not available, include age as a continuous feature, but also consider whether the ML pipeline will benefit from an age-squared term to capture the non-linear (inverted-U) relationship between age and relapse risk. Tree-based models handle this automatically; linear models will not.
+
+## is_hispanic
+
+Notes: Study 30 has about 5% hispanic while the others have ~17%
+
+```{r is-hispanic-summary}
+demographics |>
+  left_join(everybody, by = "who") |>
+  select(who, project, is_hispanic) |>
+  mutate(is_hispanic = tolower(is_hispanic)) |>
+  mutate(
+    hispanic_binary = case_match(
+      is_hispanic,
+      "yes" ~ 1,
+      "no"  ~ 0,
+      .default = 0
+    )
+  ) |>
+  group_by(project) |>
+  summarize(
+    hispanic_count     = sum(hispanic_binary),
+    total_participants = n(),
+    prop_hispanic      = hispanic_count / total_participants
+  )
+```
+
+## race
+
+```{r race-plot}
+race_by_project <- demographics |>
+  left_join(everybody, by = "who") |>
+  select(who, project, race) |>
+  group_by(project, race) |>
+  summarize(count = n(), .groups = "drop")
+
+ggplot(race_by_project, aes(x = "", y = count, fill = race)) +
+  geom_bar(stat = "identity", width = 1) +
+  labs(title = "Race Distribution by Project") +
+  facet_wrap(~project, scales = "free") +
+  coord_polar(theta = "y") +
+  theme_void()
+```
+
+## job
+
+```{r job-plot}
+demographics |>
+  left_join(everybody, by = "who") |>
+  select(who, project, job) |>
+  group_by(project, job) |>
+  summarize(count = n(), .groups = "drop") |>
+  ggplot(aes(x = job, y = count, fill = project)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_fill_viridis_d() +
+  labs(title = "Job Status Distribution by Project") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+## is_living_stable
+
+```{r living-stable-plot}
+demographics |>
+  left_join(everybody, by = "who") |>
+  select(who, project, is_living_stable) |>
+  group_by(project, is_living_stable) |>
+  summarize(count = n(), .groups = "drop") |>
+  ggplot(aes(x = is_living_stable, y = count, fill = project)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_fill_viridis_d() +
+  labs(title = "Housing Stability Distribution by Project")
+```
+
+### Feature proposal
+
+Include, but be careful by this causing weird behavior with the distribution.
+
+Confirmatory Factor: Lack of support
+
+## education
+
+```{r education-plot}
+demographics |>
+  left_join(everybody, by = "who") |>
+  select(who, project, education) |>
+  group_by(project, education) |>
+  summarize(count = n(), .groups = "drop") |>
+  ggplot(aes(x = education, y = count, fill = project)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_fill_viridis_d() +
+  labs(title = "Education Distribution by Project") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+## marital
+
+```{r marital-plot}
+demographics |>
+  left_join(everybody, by = "who") |>
+  select(who, project, marital) |>
+  group_by(project, marital) |>
+  summarize(count = n(), .groups = "drop") |>
+  ggplot(aes(x = marital, y = count, fill = project)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_fill_viridis_d() +
+  labs(title = "Marital Status Distribution by Project")
+```
+
+### Feature proposal
+
+Include marital. Those who are married have a built in reminder to take their medication.
+
+Confirmatory factor: Lack of support
+
+## is_male
+
+```{r is-male-plot}
+demographics |>
+  left_join(everybody, by = "who") |>
+  select(who, project, is_male) |>
+  group_by(project, is_male) |>
+  summarize(count = n(), .groups = "drop") |>
+  ggplot(aes(x = is_male, y = count, fill = project)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_fill_viridis_d() +
+  labs(title = "Sex Distribution by Project")
+```
+
+## Dataset Notes
+
+I think each of the above should be features. Since these are categorical variables, think about how to structure them.
+
+# detox
+
+# everybody
+
+## who
+
+Description: Ascending ID's from 1 to 3560 for the 3560 participants. They're all unique, nothing messy here.
+
+Notes: We will commonly join on `who` to compare info across datasets
+
+## project
+
+Description: Three possible values: 27, 30, 51, corresponding to the
+
+```{r project-levels}
+everybody |> distinct(project)
+```
+
+Notes: We can get a lot of exploratory information by separating out which study the participants were on. For example, study 27 has very sparse demographic information in demographics, across lots of the variables.
+
+## Dataset Notes
+
+Number of people on each study
+
+```{r project-counts}
+everybody |>
+  group_by(project) |>
+  summarize(count = n())
+```
+
+# fagerstrom
+
+## Dataset Notes
+
+```{r fagerstrom-overview}
+glimpse(fagerstrom)
+```
+
+### Feature proposal
+
+**Fagerstrom total score** (or its raw components). The Fagerstrom Test for Nicotine Dependence (FTND) is a validated 6-item scale. Nicotine dependence severity is one of the most consistently reported predictors of OUD treatment failure — smokers have significantly lower abstinence rates from opioids at 12 months (Weinberger et al. 2018; Tsoh et al. 2011). Mechanistically, shared dopaminergic pathways mean nicotine craving and opioid craving are not independent. Include as a continuous score.
+
+# first_survey
+
+# meta_study_length
+
+Inclined to not include any features from here. If I do, "treatment" and "does_study_taper" will be the features. See comment on "project".
+
+# meta_substance_groups_uds
+
+# pain
+
+```{r pain-overview}
+glimpse(pain)
+```
+
+### Feature proposal
+
+**Baseline pain score** (mean or maximum pain reported across the -28 to 0 window). Self-reported pain is independently associated with OUD treatment dropout and relapse, above and beyond the pain x drug use interaction proposed in the Database Notes (Rhodin et al. 2006; Dunn et al. 2014). Chronic pain is a key driver of opioid self-medication and should appear both as a main effect and in the interaction terms.
+
+# psychiatric
+
+## Dataset Notes
+
+```{r psychiatric-overview}
+glimpse(psychiatric)
+```
+
+### Feature proposal
+
+**Depression diagnosis / score**: Whether the participant meets criteria for a depressive disorder (or a continuous depression symptom score if available). Depression is the single most replicated psychiatric predictor of OUD relapse (Nunes & Levin 2004; Kidorf et al. 2004). Co-occurring depression cuts abstinence rates roughly in half in MOUD trials.
+
+### Feature proposal
+
+**Anxiety disorder binary**: Whether the participant has a current anxiety disorder (generalized anxiety, panic, social anxiety). Anxiety comorbidity predicts worse outcomes particularly for XR-NTX, where early discontinuation due to side effects is more common in anxious patients (Lee et al. 2018).
+
+### Feature proposal
+
+**PTSD binary**: Post-traumatic stress disorder diagnosis. PTSD is uniquely predictive of opioid relapse beyond general anxiety (Yule et al. 2018; Back et al. 2014), especially among women, and the mechanism (hyperarousal → craving) is well-established. Given the high trauma burden in OUD populations, this is a high-confidence inclusion.
+
+### Feature proposal
+
+**Total psychiatric comorbidity count**: Number of distinct psychiatric diagnoses at baseline (integer). Higher comorbidity load predicts worse treatment outcomes across all three study medications and serves as a useful summary variable when individual diagnoses are sparse (Watkins et al. 2011).
+
+# qol
+
+## Dataset Notes
+
+```{r qol-overview}
+glimpse(qol)
+```
+
+### Feature proposal
+
+**Baseline quality of life composite** (overall score, or physical/mental subscores if the instrument is the SF-36 or EQ-5D). Lower QOL at baseline is associated with lower treatment motivation and higher dropout (Barr et al. 2002). The mental health subscale in particular captures a broader functional burden than individual diagnoses and is often predictive even after controlling for psychiatric diagnoses.
+
+# randomization
+
+Note: make sure to include first randomization only.
+
+### Feature proposal
+
+**Treatment arm** (what medication the participant was randomized to: methadone, buprenorphine-naloxone, or XR-naltrexone). This is arguably the most important covariate in the entire analysis. The X:BOT trial (CTN-0051; Lee et al. 2018) found that XR-NTX had significantly lower retention than buprenorphine-naloxone, primarily due to the induction barrier; CTN-0028 (POATS; Weiss et al. 2011) found differential effects by prescription opioid vs. heroin subtype. If treatment arm is not included as a feature, the model will confound medication effects with patient characteristics. Include as a categorical variable (one-hot or ordinal depending on model).
+
+Note: treatment arm is derivable from `randomization` (first randomization only, per the overall rule) joined to `everybody` for the study indicator.
+
+# rbs
+
+## Dataset Notes
+
+```{r rbs-overview}
+glimpse(rbs)
+```
+
+### Feature proposal
+
+**Social network drug use**: The number or proportion of people in the participant's social network who use drugs (if this item is in the RBS). Social network drug use is one of the strongest documented predictors of OUD relapse — having drug-using peers roughly doubles relapse odds at 12 months (Havassy et al. 1991; Jason et al. 2010). This captures environmental exposure that no within-person drug history variable can capture.
+
+### Feature proposal
+
+**Number of recent sexual partners**: From the RBS. High partner count is a marker of HIV risk behavior and a proxy for social instability and sensation-seeking, both of which predict OUD treatment dropout (Nunes et al. 2010). Include as a continuous or binned count.
+
+# rbs_iv
+
+## Dataset Notes
+
+```{r rbs-iv-overview}
+glimpse(rbs_iv)
+```
+
+### Feature proposal
+
+**Recent IV drug use binary**: Whether the participant injected drugs in the period captured by the Risk Behavior Survey. IV drug use at intake is associated with more severe OUD, greater withdrawal intensity, higher overdose risk, and substantially worse treatment retention in buprenorphine and XR-NTX arms (Roux et al. 2014; Gossop et al. 2002). This is distinct from the ASI lifetime IV use indicator — the recent/current measure is more clinically proximal.
+
+# screening_date
+
+# sex
+
+# site_masked
+
+## Dataset Notes
+
+### Feature proposal
+
+**Study site (masked)**: Include `site_masked` as a covariate. Multi-site RCTs routinely show substantial site effects on retention and relapse rates, driven by differences in clinic culture, staff support, and local drug market conditions. Omitting site risks attributing site-level variance to individual features. Given the masked coding, this can be included directly as a factor with dummy/one-hot encoding.
+
+# tlfb
+
+The following features have been removed because all_drugs has been filtered to have the level of granularity I desire.
+
+### Feature proposal
+
+# treatment
+
+# uds
+
+# uds_temp
+
+# visit
+
+# withdrawal
+
+# withdrawal_pre_post
+
+## Dataset Notes
+
+```{r withdrawal-pre-post-overview}
+glimpse(withdrawal_pre_post)
+```
+
+### Feature proposal
+
+**Pre-induction withdrawal severity score** (baseline COWS or SOWS score before first dose). Baseline withdrawal severity is a predictor of buprenorphine induction success and XR-NTX induction completion. Patients with higher pre-induction COWS are more likely to fail induction onto XR-NTX (Lee et al. 2018; Sigmon et al. 2012), creating a selection effect that is critical to model. Include as a continuous score.
+
+### Feature proposal
+
+**Delta withdrawal score** (post-induction score minus pre-induction score, or equivalently: how much withdrawal improved after the first dose). Larger improvement ("responders") are more likely to remain in treatment. This captures individual pharmacokinetic responsiveness beyond baseline severity alone. Derivable from `withdrawal_pre_post`.
+
+# Database Notes
+
+### Feature proposal: pain x tlfb 1
+
+Hypothesis: participants who use more HARD drugs (adjusted for average drugs per day pre-treatment) on the days they are experiencing more pain are MORE likely to relapse. I also expect this to be especially important for XR-NTX because severe withdrawal symptoms towards the end of the injection month predict relapse. Those who already have an underlying tendency to self-medicate their pain may be more subject to this.
+
+**Q: Pool hard drugs or keep separate?**
+
+For the pain interaction term: pool. Use a composite "hard drug days" count (heroin + fentanyl + cocaine + crack + methamphetamine) as the operand in the interaction feature. The sparse 28-day window means per-drug interaction counts will be near-zero for most participants, giving the model almost nothing to work with. The composite is robust to this sparsity and directly tests the self-medication hypothesis.
+
+Keep individual drug counts as separate main-effect features (which they are, from the expanded "days per person" section above). If there is a drug-specific interaction of interest — e.g., heroin use on high-pain days specifically — that can be added as a secondary feature, but it should not replace the composite.
+
+Recommended feature: `pain_harddrug_composite_corr` (see measurement question below).
+
+**Q: Best way to measure panel correlation per person? (Same-day assumption.)**
+
+The same-day assumption is reasonable and computationally simplest. For the 28-day window, two complementary scalar features are recommended:
+
+**Feature 1 — `pain_harddrug_corr`**: Person-level Pearson correlation between daily pain score and daily hard-drug-use binary (0 = no hard drug use on that day, 1 = any hard drug use) across days −28 to −1. Pearson is appropriate here (pain is continuous; drug use is binary but treated as numeric). Spearman is a robust alternative if pain scores are skewed.
+
+*Handles sparsity problem*: If a person used hard drugs on 0 days in the window, the correlation is undefined — code as 0 (no co-occurrence tendency). If they used on all 28 days, correlation is also undefined (zero-variance drug column) — code as `NA` and impute or drop.
+
+**Feature 2 — `pain_highrisk_harddrug_rate`**: Among days where the person's pain score exceeds their own median pain for the window, the proportion of those days that also had hard drug use. This feature is interpretable, handles zero-inflated drug data better than correlation, and directly operationalises "self-medicating bad pain days." It is also bounded [0, 1] which aids some models.
+
+Both features capture the same construct from different angles. Include both in the analysis tibble and let the ML pipeline determine which carries signal.
+
+Confirmatory factor: Self-medication tendency
+
+### Feature proposal 1: pain x tlfb 2
+
+Hypothesis: participants who use more SOFT (coffee, weed, etc.) drugs (adjusted for average drugs per day pre-treatment) on the days they are experiencing more pain are LESS likely to relapse.
+
+Explanation: Participants who self-medicate their pain with non-opioids may turn to these first when they experience withdrawal symptoms.
+
+Apply the same two-feature operationalisation as pain × hard drugs above:
+
+- `pain_softdrug_corr`: Pearson correlation between daily pain and daily soft-drug binary (THC, alcohol light, caffeine — the "soft drug" composite) across days −28 to −1.
+- `pain_highrisk_softdrug_rate`: Proportion of high-pain days (above personal median) on which any soft drug was used.
+
+The hypothesis predicts a **negative** `pain_softdrug_corr` (or near zero), and a **negative** association between `pain_highrisk_softdrug_rate` and relapse. This is the protective-substitution hypothesis and is distinct from the general soft-drug use main effect.
+
+**Soft drug composite definition**: THC + Alcohol (light) + Caffeine. Exclude Alcohol (hard) from the soft drug composite since it crosses into substance-of-concern territory. Nicotine could be included or kept separate.
+
+Confirmatory factor: Self-medication tendency
+
+---
+
+### Feature proposal: withdrawal trajectory x time
+
+**Slope of withdrawal symptom scores over the -28 to 0 window** (from `withdrawal`). If a participant's withdrawal symptoms are *increasing* in the days before study entry (i.e., escalating dependence), this predicts worse outcomes compared to stable or decreasing withdrawal. A simple linear slope estimated per-person via `lm(score ~ when)` within the window captures this. Increasing withdrawal slope has been associated with higher opioid craving and lower treatment readiness (O'Brien & McLellan 1996).
+
+Confirmatory factor: Escalating dependence severity
+
+### Feature proposal: medication adherence history (cross-dataset)
+
+**Proposed prescribed-medication composite features** (derived from `all_drugs_filtered`, restricted to the categories below):
+
+| Feature | Definition | Rationale |
+|---|---|---|
+| `rx_any_binary` | 1 if participant has ≥1 day of any prescribed non-MOUD medication in −28 to −1 | Binary adherence flag; "responsibility towards health" construct |
+| `rx_days` | Total days in window with any prescribed non-MOUD medication recorded | Graded adherence signal |
+| `rx_categories` | Count of distinct prescribed medication categories used | Breadth of medical engagement |
+
+**Categories that contribute to the composite** (excludes MOUD and legal non-Rx substances):
+
+- `Antidepressant` — psychiatric medication adherence
+- `Analgesic` (Gabapentin) — pain/prescription management
+- `Muscle Relaxant` — prescribed non-addictive medication
+- `Antiemetic` — anti-nausea prescription (e.g. ondansetron)
+- `Sedatives` / `Benzodiazepine` — prescribed CNS depressants *(note: these ARE addictive; consider excluding from the "non-addictive" composite and keeping as separate features)*
+
+**Implementation note:** Use `all_drugs_filtered` filtered to these categories, then aggregate per person over the −28 to −1 window. Do not include MOUD (Buprenorphine, Suboxone, Methadone) in this composite — those have their own dedicated features and carry a different signal.
+
+Confirmatory factor: Responsibility towards health

@@ -1,0 +1,494 @@
+---
+title: "Features to Include"
+author: "Nat Oliven"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output: html_document
+---
+
+```{r setup, echo=FALSE, message=FALSE, warning=FALSE}
+library(conflicted)
+suppressPackageStartupMessages(library(tidyverse))
+library(public.ctn0094data)
+conflicts_prefer(dplyr::filter)
+```
+
+# Formatting Conventions For This Document
+
+- **Header 1's** are datasets, and "Database Notes" about the data package as a whole
+- **Header 2's** are variables within the datasets, and "Dataset Notes" about that dataset as a whole (can include photos of a table, descriptive graphics, anything that gives us a sense of what we're looking at)
+  - "Who" is a redundant column that we don't need to investigate every time, include variables of note
+  - Ideally we'd have all 46 variables, but maybe the less interesting ones don't get explored.
+- **Header 3's** are always written "Feature proposal", with text underneath explaining what the feature is and why it should be included.
+  - When a "Feature proposal" pertains to just one variable in the dataset, put it beneath that variable's "Header 2"
+    - If the raw column itself is a feature proposal, that's ok! Just write this explicitly and explain why it requires no further filtering
+  - When a "Feature proposal" pertains to multiple variables in the same dataset, put the feature proposal in "Dataset Notes" for that dataset ("Dataset Notes" will be a Header 2).
+- When the "Feature proposal" pertains to multiple variables in different datasets, put the feature proposal in the "Database Notes"
+- To make headers, highlight your text, and then go to Format > Paragraph Styles and select the appropriate header.
+
+# Data Set Description
+
+Data sets in package `public.ctn0094data`:
+
+| Dataset                     | Description                                            |
+|-----------------------------|--------------------------------------------------------|
+| `all_drugs`                 | All drugs taken                                        |
+| `asi`                       | Did patient use intravenous drugs                      |
+| `demographics`              | Patient demographics                                   |
+| `detox`                     | Start and Stop of Detox                                |
+| `everybody`                 | Everybody with any data                                |
+| `fagerstrom`                | Fagerstrom Test for Nicotine Dependence                |
+| `first_survey`              | First Survey Date                                      |
+| `meta_study_length`         | Metadata About Study Length                            |
+| `meta_substance_groups_uds` | Metadata About UDS Groupings                           |
+| `pain`                      | Self-Reported Pain                                     |
+| `psychiatric`               | Psychiatric History                                    |
+| `qol`                       | Quality of Life                                        |
+| `randomization`             | Randomization Data                                     |
+| `rbs`                       | Risk Behavior Survey                                   |
+| `rbs_iv`                    | Risk Behavior Survey IV drug use information           |
+| `screening_date`            | Screening Date Information                             |
+| `sex`                       | Sexual Activity in Risk Behavior Survey                |
+| `site_masked`               | Site Regrouped                                         |
+| `tlfb`                      | Timeline Followback (TLFB) Drug Use Information        |
+| `treatment`                 | Amount of Study Drug Per Day                           |
+| `uds`                       | Urine Drug Screening (UDS) Results                     |
+| `uds_temp`                  | Urine Drug Screening (UDS) Temperature                 |
+| `visit`                     | Patient Visit Data                                     |
+| `withdrawal`                | Patient Withdrawal Symptoms Per Day                    |
+| `withdrawal_pre_post`       | Patient Withdrawal Symptoms Pre and Post Induction     |
+
+# all_drugs
+
+Rather than using tlfb, I cleaned up all_drugs to give me more granular control over the rule. I axed any meds with less than 10 uses. I grouped together all opioids. I left out certain illicit drugs with significance in the literature related to opioid relapse (fent, methamphetamines, cocaine, etc.) separate. I kept hard and light drinking separate.
+
+```{r all-drugs-map}
+drug_map <- c(
+  # opioid group, but keep heroin/fentanyl/buprenorphine/suboxone separate
+  "Acetaminophen"          = "Opioid",
+  "Codeine"                = "Opioid",
+  "Hydrocodone"            = "Opioid",
+  "Hydromorphone"          = "Opioid",
+  "Merperidine"            = "Opioid",
+  "Morphine"               = "Opioid",
+  "Nalbuphine"             = "Opioid",
+  "Opium"                  = "Opioid",
+  "Oxycodone"              = "Opioid",
+  "Oxymorphone"            = "Opioid",
+  "Propoxyphene"           = "Opioid",
+  "Tramadol"               = "Opioid",
+
+  # sedatives, but keep benzodiazepines separate
+  "Sedative-Hypnotic"      = "Sedatives",
+  "Barbiturate"            = "Sedatives",
+
+  # antidepressants
+  "Trazodone"              = "Antidepressant",
+  "Tryclic-Antidepressant" = "Antidepressant",
+
+  # analgesics
+  "Gabapentin"             = "Analgesic",
+
+  # naming / grouping cleanup
+  "Thc"                    = "Cannabinoids",
+  "K2"                     = "Cannabinoids",
+  "Musclerelax"            = "Muscle Relaxant",
+  "Mdma"                   = "MDMA/Hallucinogen",
+  "Hallucinogen"           = "MDMA/Hallucinogen",
+  "Alcohol"                = "Alcohol Missing Amnt"
+)
+
+all_drugs_grouped <- all_drugs |>
+  mutate(
+    what_grouped = ifelse(
+      what %in% names(drug_map),
+      drug_map[as.character(what)],
+      as.character(what)
+    ),
+    what_grouped = factor(what_grouped)
+  )
+```
+
+```{r all-drugs-filtered}
+# Primary filter: keep only categories with >= 10 use events in window
+drugs_to_keep <- all_drugs_grouped |>
+  filter(when < 0, when >= -28) |>
+  count(what_grouped) |>
+  filter(n >= 10) |>
+  pull(what_grouped)
+
+all_drugs_filtered <- all_drugs_grouped |>
+  filter(when < 0, when >= -28) |>
+  filter(what_grouped %in% drugs_to_keep)
+
+# Secondary filter: drop illicit categories used by < 1% of
+# participants. Prescribed / legal categories are exempt because
+# even rare use carries signal (medication adherence, comorbidity).
+prescribed_or_legal <- c(
+  "Buprenorphine", "Suboxone", "Methadone",
+  "Benzodiazepine", "Sedatives", "Opioid",
+  "Muscle Relaxant", "Analgesic", "Antidepressant", "Antiemetic",
+  "Heavy Drinking", "Light Drinking", "Alcohol Missing Amnt",
+  "Cannabinoids", "Nicotine", "Caffeine"
+)
+
+total_persons_all <- n_distinct(all_drugs_filtered$who)
+
+illicit_low_prev <- all_drugs_filtered |>
+  distinct(who, what_grouped) |>
+  group_by(what_grouped) |>
+  summarize(n_users = n(), .groups = "drop") |>
+  mutate(pct_users = n_users / total_persons_all * 100) |>
+  filter(pct_users < 1,
+         !as.character(what_grouped) %in% prescribed_or_legal) |>
+  pull(what_grouped)
+
+all_drugs_filtered <- all_drugs_filtered |>
+  filter(!what_grouped %in% illicit_low_prev)
+
+all_drugs_filtered |>
+  group_by(what_grouped) |>
+  count() |>
+  arrange(desc(n)) |>
+  print(n = 30)
+```
+
+### Feature proposals: Days per person
+
+For each drug category below, compute total days in the window −28 to −1 where **any source** (TFB, UDS, or UDSAB) detected the substance. Count each day at most once per drug per person (no double-counting across sources). Verify final list against `all_drugs_filtered |> count(what_grouped)`.
+
+| Feature name | Drug category | Include? |
+|---|---|---|
+| `heroin_days` | Heroin | Yes |
+| `fentanyl_days` | Fentanyl | Yes |
+| `opioid_days` | Opioid (prescription group) | Yes |
+| `cocaine_days` | Cocaine | Yes |
+| `crack_days` | Crack cocaine | Yes, if ≥10 events |
+| `methamphetamine_days` | Methamphetamine | Yes |
+| `benzodiazepine_days` | Benzodiazepine | Yes |
+| `thc_days` | THC | Yes |
+| `alcohol_hard_days` | Alcohol (hard/heavy) | Yes |
+| `alcohol_light_days` | Alcohol (light/moderate) | Yes |
+| `buprenorphine_days` | Buprenorphine | Yes |
+| `suboxone_days` | Suboxone | Yes (buprenorphine-equivalent) |
+| `methadone_days` | Methadone | Yes |
+| `sedatives_days` | Sedatives | Conditional (≥10 events) |
+| `analgesic_days` | Analgesic (Gabapentin) | Conditional (≥10 events) |
+| `antidepressant_days` | Antidepressant | Conditional (≥10 events) |
+| `nicotine_days` | Nicotine | Conditional (≥10 events) |
+| ~~`caffeine_days`~~ | Caffeine | **Omit** |
+
+### Feature proposals: Binary (any use)
+
+For each drug in the days table above, also compute a binary 0/1 flag: did the person use this substance **at all** in the −28 to −1 window (any source, any day)? This might be useful in models that have some kind of built in linearity assumption. If we just do total heroin days, that means the difference between 0 and 1 days using matters just as much as the difference between 1 and 2 days using.
+
+Include binary features for all drugs in the days table, plus `nicotine_binary` even if `nicotine_days` is dropped.
+
+### Feature proposals: Longest streak
+
+Longest consecutive-day streak for **addictive substances only**. Streak length captures compulsive use patterns beyond what a total-days count reflects.
+
+**Include:**
+`heroin_streak`, `fentanyl_streak`, `opioid_streak`, `cocaine_streak`, `crack_streak`, `methamphetamine_streak`, `benzodiazepine_streak`, `alcohol_hard_streak`, `thc_streak`, `sedatives_streak` (conditional on ≥10 events)
+
+**Omit streaks for:**
+`buprenorphine`, `suboxone`, `methadone` (these are medications; long streak = good adherence, not compulsive use), `antidepressant`, `analgesic`, `alcohol_light`, `caffeine`
+
+### Feature Proposal
+
+Heavy drinking events - light drinking events.
+
+Measures: restraint.
+
+Question: Is this better than just including the count of both, separately, as features? Or worse?
+
+### Feature Proposal
+
+Took THEIR study drug before study
+
+### Feature Proposal
+
+Took DIFFERENT study drug before study (e.g. their study put them on Bup but they had attempted to get clean and failed pre study with xr-ntx)
+
+Notes for above 2 features:
+
+What are the study drugs?
+
+- CTN-0028: Methadone vs Buprenorphine-Naloxone
+- CTN-0030: Only Buprenorphine-Naloxone (Suboxone)
+- CTN-0051: XR Naltrexone vs Buprenorphine-Naloxone
+
+- You need to not only get what study but also what drug they were randomized to
+- In the `all_drugs_filtered` table I am using, Buprenorphine and Suboxone are separate. If someone is randomized to Suboxone but took Buprenorphine prior, count this as having taken THEIR study drug. They are substantially similar.
+- We do not need "Took no study drug before study" because it should be collinear with the above two and probably would break stuff
+
+### Feature proposal
+
+Lie count. The number of days (not drugs, etc. days.) each person's drug results self reported from tlfb did not match their reports from UDS or UDSAB. If they over-reported something in tlfb that was not in uds/udsab, do not up the count. Only up the days count for under-reporting.
+
+### Feature proposal
+
+# asi
+
+# demographics
+
+## who
+
+## age
+
+```{r age-plot}
+demographics |>
+  left_join(everybody, by = "who") |>
+  ggplot(aes(x = age)) +
+  geom_histogram() +
+  facet_wrap(~project)
+```
+
+## is_hispanic
+
+Notes: Study 30 has about 5% hispanic while the others have ~17%
+
+```{r is-hispanic-summary}
+demographics |>
+  left_join(everybody, by = "who") |>
+  select(who, project, is_hispanic) |>
+  mutate(is_hispanic = tolower(is_hispanic)) |>
+  mutate(
+    hispanic_binary = case_match(
+      is_hispanic,
+      "yes" ~ 1,
+      "no"  ~ 0,
+      .default = 0
+    )
+  ) |>
+  group_by(project) |>
+  summarize(
+    hispanic_count    = sum(hispanic_binary),
+    total_participants = n(),
+    prop_hispanic     = hispanic_count / total_participants
+  )
+```
+
+## race
+
+```{r race-plot}
+race_by_project <- demographics |>
+  left_join(everybody, by = "who") |>
+  select(who, project, race) |>
+  group_by(project, race) |>
+  summarize(count = n(), .groups = "drop")
+
+ggplot(race_by_project, aes(x = "", y = count, fill = race)) +
+  geom_bar(stat = "identity", width = 1) +
+  labs(title = "Race Distribution by Project") +
+  facet_wrap(~project, scales = "free") +
+  coord_polar(theta = "y") +
+  theme_void()
+```
+
+## job
+
+```{r job-plot}
+demographics |>
+  left_join(everybody, by = "who") |>
+  select(who, project, job) |>
+  group_by(project, job) |>
+  summarize(count = n(), .groups = "drop") |>
+  ggplot(aes(x = job, y = count, fill = project)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_fill_viridis_d() +
+  labs(title = "Job Status Distribution by Project") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+## is_living_stable
+
+```{r living-stable-plot}
+demographics |>
+  left_join(everybody, by = "who") |>
+  select(who, project, is_living_stable) |>
+  group_by(project, is_living_stable) |>
+  summarize(count = n(), .groups = "drop") |>
+  ggplot(aes(x = is_living_stable, y = count, fill = project)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_fill_viridis_d() +
+  labs(title = "Housing Stability Distribution by Project")
+```
+
+### Feature proposal
+
+Include, but be careful by this causing weird behavior with the distribution.
+
+Confirmatory Factor: Lack of support
+
+## education
+
+```{r education-plot}
+demographics |>
+  left_join(everybody, by = "who") |>
+  select(who, project, education) |>
+  group_by(project, education) |>
+  summarize(count = n(), .groups = "drop") |>
+  ggplot(aes(x = education, y = count, fill = project)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_fill_viridis_d() +
+  labs(title = "Education Distribution by Project") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+## marital
+
+```{r marital-plot}
+demographics |>
+  left_join(everybody, by = "who") |>
+  select(who, project, marital) |>
+  group_by(project, marital) |>
+  summarize(count = n(), .groups = "drop") |>
+  ggplot(aes(x = marital, y = count, fill = project)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_fill_viridis_d() +
+  labs(title = "Marital Status Distribution by Project")
+```
+
+### Feature proposal
+
+Include marital. Those who are married have a built in reminder to take their medication.
+
+Confirmatory factor: Lack of support
+
+## is_male
+
+```{r is-male-plot}
+demographics |>
+  left_join(everybody, by = "who") |>
+  select(who, project, is_male) |>
+  group_by(project, is_male) |>
+  summarize(count = n(), .groups = "drop") |>
+  ggplot(aes(x = is_male, y = count, fill = project)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_fill_viridis_d() +
+  labs(title = "Sex Distribution by Project")
+```
+
+## Dataset Notes
+
+I think each of the above should be features. Since these are categorical variables, think about how to structure them.
+
+# detox
+
+# everybody
+
+## who
+
+Description: Ascending ID's from 1 to 3560 for the 3560 participants. They're all unique, nothing messy here.
+
+Notes: We will commonly join on `who` to compare info across datasets
+
+## project
+
+Description: Three possible values: 27, 30, 51, corresponding to the
+
+```{r project-levels}
+everybody |> distinct(project)
+```
+
+Notes: We can get a lot of exploratory information by separating out which study the participants were on. For example, study 27 has very sparse demographic information in demographics, across lots of the variables.
+
+## Dataset Notes
+
+Number of people on each study
+
+```{r project-counts}
+everybody |>
+  group_by(project) |>
+  summarize(count = n())
+```
+
+# fagerstrom
+
+# first_survey
+
+# meta_study_length
+
+Inclined to not include any features from here. If I do, "treatment" and "does_study_taper" will be the features. See comment on "project".
+
+# meta_substance_groups_uds
+
+# pain
+
+```{r pain-overview}
+glimpse(pain)
+```
+
+# psychiatric
+
+# qol
+
+# randomization
+
+Note: make sure to include first randomization only.
+
+# rbs
+
+# rbs_iv
+
+# screening_date
+
+# sex
+
+# site_masked
+
+# tlfb
+
+The following features have been removed because all_drugs has been filtered to have the level of granularity I desire.
+
+### Feature Proposal
+
+Something to do with hard drugs vs *non-addictive medications* vs soft drugs vs psychedelics
+
+Hypothesis: Those who are able to take non-addictive medications on a schedule are going to do better at taking their study medication on a schedule, and are less likely to relapse.
+
+Confirmatory factor: Responsibility towards health
+
+### Feature Proposal
+
+Average number of "HARD drugs" used per day before treatment, starting at day -28.
+
+Hypothesis: Those who use a greater variety of hard drugs are more likely to relapse.
+
+### Feature proposal
+
+Total number of uses of "soft drugs" used per day before treatment.
+
+### Feature proposal
+
+# treatment
+
+# uds
+
+# uds_temp
+
+# visit
+
+# withdrawal
+
+# withdrawal_pre_post
+
+# Database Notes
+
+### Feature proposal: pain x tlfb 1
+
+Hypothesis: participants who use more HARD drugs (adjusted for average drugs per day pre-treatment) on the days they are experiencing more pain are MORE likely to relapse. I also expect this to be especially important for XR-NTX because severe withdrawal symptoms towards the end of the injection month predict relapse. Those who already have an underlying tendency to self-medicate their pain may be more subject to this.
+
+Question: As features, do I want to pool together all hard drugs, or is it best to separate out each kind of hard drug?
+
+Question: With two sets of longitudinal data, what is the best way to measure how related these panels are for each person? Simple correlation score (probs not, what's the longitudinal analogue of this)? I am assuming they medicate their pain same-day.
+
+Confirmatory factor: Self-medication tendency
+
+### Feature proposal 1: pain x tlfb 2
+
+Hypothesis: participants who use more SOFT (coffee, weed, etc.) drugs (adjusted for average drugs per day pre-treatment) on the days they are experiencing more pain are LESS likely to relapse.
+
+Explanation: Participants who self-medicate their pain with non-opioids may turn to these first when they experience withdrawal symptoms.
+
+Confirmatory factor: Self-medication tendency

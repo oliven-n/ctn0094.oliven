@@ -1,0 +1,6 @@
+---
+title: "Building the Analysis Tibble"
+author: "Nat Oliven"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output: html_document
+---
