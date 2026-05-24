@@ -18,39 +18,6 @@ be skipped regardless of this document.
 
 ---
 
-## Drug Map Changes (since initial version)
-
-The following changes to `drug_map` have been made and are reflected in this
-document. Update feature names and section headers accordingly.
-
-| Original name in `what` | New `what_grouped` value | Change type |
-|---|---|---|
-| `"Thc"` | `"Cannabinoids"` | Rename + group |
-| `"K2"` | `"Cannabinoids"` | Merged into Cannabinoids |
-| `"Mdma"` | `"MDMA/Hallucinogen"` | Capitalisation fix |
-| `"Hallucinogen"` | `"MDMA/Hallucinogen"` | Merged into MDMA/Hallucinogen |
-| `"Alcohol"` | `"Alcohol Missing Amnt"` | Rename (amount unknown records) |
-| `"Musclerelax"` | `"Muscle Relaxant"` | Unchanged (already existed) |
-
-**Secondary filter applied:** Illicit drug categories with < 1% prevalence
-(users / total participants) are dropped from `all_drugs_filtered`. Prescribed
-and legal categories are exempt. PCP (19 events) is the known casualty of this
-filter; MDMA/Hallucinogen (~100 events after merge) may also be dropped —
-flagged below.
-
-**Nicotine:** Not found in the pre-study window. Run the following to
-investigate before assuming it is absent:
-```r
-all_drugs |>
-  filter(grepl("nic|tobacco|smok|cig", what, ignore.case = TRUE)) |>
-  count(what)
-```
-`nicotine_binary` is unconditionally included if any nicotine records exist;
-`nicotine_days` is conditional on the ≥10 events filter. If nicotine is truly
-absent from `all_drugs`, skip both features and rely on the Fagerstrom score.
-
----
-
 ## Hard / Illicit Drugs
 
 ### Heroin
@@ -77,11 +44,15 @@ absent from `all_drugs`, skip both features and rely on the Fagerstrom score.
 ### Crack cocaine
 | Feature | Include? | Justification |
 |---|---|---|
-| `crack_days` | ✅ Yes | 2889 events in the window; passes filter by a wide margin |
-| `crack_streak` | ✅ Yes | Same rationale as cocaine; binge pattern |
-| `crack_binary` | ✅ Yes | Any vs. no crack use is a meaningful severity split |
+| `crack_days` | ✅ Yes (if ≥10 events) | Distinct use pattern from powder cocaine; if sparse, may be dropped by filter |
+| `crack_streak` | ✅ Yes (if ≥10 events) | Same rationale as cocaine |
+| `crack_binary` | ✅ Yes (if ≥10 events) | |
 
-**Note:** With 2889 events, crack is not sparse. The composite `stimulant_days` option is not needed — keep cocaine and crack as separate features.
+**Note:** If both `cocaine_days` and `crack_days` survive the filter but
+`crack_days` is very sparse (10–30 events), consider whether a composite
+`stimulant_days = cocaine_days + crack_days` is more useful than keeping
+both separate. Leave this decision to the ML pipeline unless counts are
+extremely low.
 
 ### Methamphetamine
 | Feature | Include? | Justification |
@@ -89,17 +60,6 @@ absent from `all_drugs`, skip both features and rely on the Fagerstrom score.
 | `methamphetamine_days` | ✅ Yes | Increasingly common in OUD populations; high addiction potential |
 | `methamphetamine_streak` | ✅ Yes | Binge/run use pattern; streak meaningful |
 | `methamphetamine_binary` | ✅ Yes | Any vs. none split is clinically relevant |
-
-### Amphetamine
-| Feature | Include? | Justification |
-|---|---|---|
-| `amphetamine_days` | ✅ Yes | 844 events; passes filter. Treat same as methamphetamine — stimulant with high abuse potential. Could be Adderall Rx but likely illicit in this context |
-| `amphetamine_streak` | ✅ Yes | Same rationale as methamphetamine |
-| `amphetamine_binary` | ✅ Yes | Any vs. none split clinically relevant |
-
-**Note:** Amphetamine was not in the original `drug_map` and keeps its
-original name in `what_grouped`. It was only discovered after inspecting the
-filtered data. Not in the original drug_specific_features.md.
 
 ---
 
@@ -115,26 +75,20 @@ filtered data. Not in the original drug_specific_features.md.
 ### Sedatives (grouped: Sedative-Hypnotic + Barbiturate)
 | Feature | Include? | Justification |
 |---|---|---|
-| `sedatives_days` | ✅ Yes (263 events observed) | Non-benzo CNS depressants; barbiturates are largely out of use but hypnotics (Ambien etc.) remain common |
-| `sedatives_streak` | ✅ Yes (263 events observed) | Physical dependence potential; streak meaningful |
-| `sedatives_binary` | ✅ Yes (263 events observed) | Any use flag |
-
-**Note:** 263 events observed in the window — comfortably passes the ≥10
-filter. Updated from conditional ⚠️ to unconditional ✅.
+| `sedatives_days` | ⚠️ Conditional (≥10 events) | Non-benzo CNS depressants; barbiturates are largely out of use but hypnotics (Ambien etc.) remain common |
+| `sedatives_streak` | ⚠️ Conditional (≥10 events) | If events are present, streak is meaningful (physical dependence potential) |
+| `sedatives_binary` | ⚠️ Conditional (≥10 events) | Any use flag |
 
 ---
 
 ## Cannabis
 
-### Cannabinoids (formerly THC; now includes K2)
+### THC
 | Feature | Include? | Justification |
 |---|---|---|
-| `cannabinoids_days` | ✅ Yes | Cannabis use has a complex bidirectional relationship with opioid use; include to let the model find the direction. K2 merged in (31 events, same pharmacological class) |
-| `cannabinoids_streak` | ✅ Yes | Cannabis use disorder is real; streak captures habitual use vs. occasional |
-| `cannabinoids_binary` | ✅ Yes | Any use vs. none |
-
-**Note:** Previously named `thc_days` / `thc_streak` / `thc_binary`. K2
-(synthetic cannabinoid, 31 events) was merged into this group via `drug_map`.
+| `thc_days` | ✅ Yes | Cannabis use has a complex bidirectional relationship with opioid use; include to let the model find the direction |
+| `thc_streak` | ✅ Yes | Cannabis use disorder is real; streak captures habitual use vs. occasional |
+| `thc_binary` | ✅ Yes | Any use vs. none |
 
 ---
 
@@ -155,19 +109,8 @@ filter. Updated from conditional ⚠️ to unconditional ✅.
 | `alcohol_light_binary` | ✅ Yes | Any light drinking vs. abstinence |
 
 **Note:** The "restraint" feature (`alcohol_hard_days − alcohol_light_days`)
-is a derived feature computed at tibble-building time. Keep raw counts as
-separate features too.
-
-### Alcohol (missing amount)
-| Feature | Include? | Justification |
-|---|---|---|
-| `alcohol_missing_amnt_days` | ✅ Yes | 1449 events; records where alcohol was logged but not classified as heavy or light. Keeps information rather than discarding it; unknown amount means unknown severity |
-| `alcohol_missing_amnt_streak` | ❌ No | Severity unknown; streak semantics unclear for unclassified alcohol. Omit to avoid spurious signal |
-| `alcohol_missing_amnt_binary` | ✅ Yes | Any unclassified alcohol use — captures people who drank but whose amount was not recorded |
-
-**Note:** These records were originally named `"Alcohol"` in `what` and had
-no classification into heavy/light. Renamed `"Alcohol Missing Amnt"` in
-`drug_map`. 1449 events; clearly passes filter.
+proposed by Nat is a derived feature to be computed separately at tibble-
+building time. Keep the raw counts as separate features too.
 
 ---
 
@@ -183,7 +126,7 @@ no classification into heavy/light. Renamed `"Alcohol Missing Amnt"` in
 ### Suboxone
 | Feature | Include? | Justification |
 |---|---|---|
-| `suboxone_days` | ✅ Yes | Treat as buprenorphine-equivalent. May combine with `buprenorphine_days` at tibble-building time |
+| `suboxone_days` | ✅ Yes | Per Nat's note, treat as buprenorphine-equivalent. May combine with `buprenorphine_days` at tibble-building time |
 | `suboxone_streak` | ❌ No | Same reasoning as buprenorphine |
 | `suboxone_binary` | ✅ Yes | Combined with `buprenorphine_binary` for the "Took THEIR study drug" feature |
 
@@ -205,22 +148,12 @@ no classification into heavy/light. Renamed `"Alcohol Missing Amnt"` in
 | `opioid_streak` | ✅ Yes | Compulsive prescription opioid use is addictive; streak meaningful |
 | `opioid_binary` | ✅ Yes | Any prescription opioid misuse vs. none |
 
-**Warning:** Acetaminophen is mapped into this group but is not an opioid —
-it likely appears as the APAP component of combination pills (Vicodin,
-Percocet). Verify whether Acetaminophen rows co-occur with opioid rows on the
-same person-day before finalising. If they do, remove `"Acetaminophen" =
-"Opioid"` from `drug_map` to avoid double-counting.
-
 ### Analgesic — Gabapentin
 | Feature | Include? | Justification |
 |---|---|---|
-| `analgesic_days` | ✅ Yes (23 events observed) | Gabapentin misuse is increasing in OUD populations; include if sufficient events |
+| `analgesic_days` | ⚠️ Conditional (≥10 events) | Gabapentin misuse is increasing in OUD populations; include if sufficient events |
 | `analgesic_streak` | ❌ No | Not established as a substance with compulsive-use streaks in OUD context; omit |
-| `analgesic_binary` | ✅ Yes (23 events observed) | Any gabapentin use (prescription adherence / misuse flag) |
-
-**Note:** 23 events observed — passes the ≥10 filter. Updated from
-conditional ⚠️ to unconditional ✅. Consider renaming to `"Gabapentin"`
-in `drug_map` (see Features_To_Include_Main.Rmd warning).
+| `analgesic_binary` | ⚠️ Conditional (≥10 events) | Any gabapentin use (prescription adherence / misuse flag) |
 
 ### Antidepressant (Trazodone + Tricyclic)
 | Feature | Include? | Justification |
@@ -229,42 +162,19 @@ in `drug_map` (see Features_To_Include_Main.Rmd warning).
 | `antidepressant_streak` | ❌ No | Streak in antidepressants = medication compliance (desirable); semantically inverted |
 | `antidepressant_binary` | ⚠️ Conditional (≥10 events) | "On antidepressants at baseline" binary may carry psychiatric comorbidity signal |
 
-**Note:** Antidepressant was not visible in the observed events table — check
-whether it survived the filter. If absent, skip.
-
-### Antiemetic
-| Feature | Include? | Justification |
-|---|---|---|
-| `antiemetic_days` | ✅ Yes (16 events; prescribed — exempt from secondary filter) | Anti-nausea medication (e.g. ondansetron). Rare but kept as standalone; also feeds rx composite |
-| `antiemetic_streak` | ❌ No | Prescription medication; streak semantics inverted |
-| `antiemetic_binary` | ✅ Yes | Any antiemetic use flag; also feeds `rx_any_binary` composite |
-
-**Note:** Antiemetic was not in the original drug_map and keeps its original
-name. Preserved by the `prescribed_or_legal` exemption in the secondary filter
-despite only 16 events.
-
 ### Muscle Relaxant
 | Feature | Include? | Justification |
 |---|---|---|
-| `muscle_relaxant_days` | ❌ Not standalone | Kept in `all_drugs_filtered` but does not generate its own feature columns; contributes to `rx_any_binary` / `rx_days` / `rx_categories` composite only |
+| `muscle_relaxant_days` | ❌ Likely omit | Low clinical relevance for OUD relapse; likely very sparse and dropped by filter |
 | `muscle_relaxant_streak` | ❌ No | |
-| `muscle_relaxant_binary` | ❌ Not standalone | |
+| `muscle_relaxant_binary` | ❌ Likely omit | |
 
-**Note:** 92 events. Kept in `all_drugs_filtered` at user request to
-operationalise the "takes medications on schedule" hypothesis via the rx
-composite. Not a standalone predictor of OUD relapse.
-
-### MDMA / Hallucinogen
+### Mdma / Hallucinogen
 | Feature | Include? | Justification |
 |---|---|---|
-| `mdma_days` | ⚠️ Flagged for deletion | ~100 events after merging Hallucinogen in; weak link to OUD relapse; may be dropped by secondary filter (< 1% users) |
+| `mdma_days` | ❌ Likely omit | Rare in this population; likely dropped by filter; weak established link to OUD relapse |
 | `mdma_streak` | ❌ No | |
-| `mdma_binary` | ⚠️ Flagged for deletion | |
-
-**Note:** Originally `"Mdma/Hallucinogen"` (from `"Mdma"` in drug_map) plus
-a separate `"Hallucinogen"` category — both merged into `"MDMA/Hallucinogen"`.
-Combined ~100 events. Kept in code with a deletion flag; remove after
-confirming < 1% prevalence or at next pipeline cleanup.
+| `mdma_binary` | ❌ Likely omit | |
 
 ---
 
@@ -273,13 +183,9 @@ confirming < 1% prevalence or at next pipeline cleanup.
 ### Nicotine
 | Feature | Include? | Justification |
 |---|---|---|
-| `nicotine_days` | ⚠️ Conditional (≥10 events; may not exist) | Comorbid nicotine dependence predicts OUD outcomes; raw days count adds information beyond Fagerstrom score |
+| `nicotine_days` | ⚠️ Conditional (≥10 events) | Comorbid nicotine dependence predicts OUD outcomes; raw days count adds information beyond Fagerstrom score |
 | `nicotine_streak` | ❌ No | Almost all smokers smoke every day; streak will be near-constant and low-variance |
-| `nicotine_binary` | ⚠️ Conditional (only if nicotine records exist) | Ever-smoker binary is high value — but if nicotine is absent from `all_drugs` entirely, rely on Fagerstrom score alone |
-
-**Note:** Nicotine was not visible in the filtered events table. Run the
-investigation query in the Drug Map Changes section above. If truly absent,
-skip both features.
+| `nicotine_binary` | ✅ Yes | Ever-smoker binary is high value regardless of days count; include unconditionally |
 
 ---
 
@@ -296,30 +202,27 @@ skip both features.
 
 ## Summary table
 
-| Drug | days | streak | binary | Notes |
-|---|---|---|---|---|
-| Heroin | ✅ | ✅ | ✅ | |
-| Fentanyl | ✅ | ✅ | ✅ | |
-| Opioid (rx group) | ✅ | ✅ | ✅ | Acetaminophen warning — verify |
-| Cocaine | ✅ | ✅ | ✅ | |
-| Crack | ✅ | ✅ | ✅ | Updated from ⚠️; 2889 events |
-| Methamphetamine | ✅ | ✅ | ✅ | |
-| Amphetamine | ✅ | ✅ | ✅ | New; 844 events |
-| Benzodiazepine | ✅ | ✅ | ✅ | |
-| Sedatives | ✅ | ✅ | ✅ | Updated from ⚠️; 263 events |
-| Cannabinoids | ✅ | ✅ | ✅ | Formerly THC; K2 merged in |
-| Alcohol (hard) | ✅ | ✅ | ✅ | |
-| Alcohol (light) | ✅ | ❌ | ✅ | |
-| Alcohol Missing Amnt | ✅ | ❌ | ✅ | New; 1449 events |
-| Buprenorphine | ✅ | ❌ | ✅ | |
-| Suboxone | ✅ | ❌ | ✅ | |
-| Methadone | ✅ | ❌ | ✅ | |
-| Analgesic (Gabapentin) | ✅ | ❌ | ✅ | Updated from ⚠️; 23 events |
-| Antidepressant | ⚠️ | ❌ | ⚠️ | Check if in filtered data |
-| Antiemetic | ✅ | ❌ | ✅ | New; 16 events; also feeds rx composite |
-| Muscle Relaxant | ❌ | ❌ | ❌ | rx composite only |
-| MDMA/Hallucinogen | ⚠️ | ❌ | ⚠️ | Flagged for deletion |
-| Nicotine | ⚠️ | ❌ | ⚠️ | Not found in data — investigate |
-| Caffeine | ❌ | ❌ | ❌ | |
+| Drug | days | streak | binary |
+|---|---|---|---|
+| Heroin | ✅ | ✅ | ✅ |
+| Fentanyl | ✅ | ✅ | ✅ |
+| Opioid (rx group) | ✅ | ✅ | ✅ |
+| Cocaine | ✅ | ✅ | ✅ |
+| Crack | ⚠️ | ⚠️ | ⚠️ |
+| Methamphetamine | ✅ | ✅ | ✅ |
+| Benzodiazepine | ✅ | ✅ | ✅ |
+| Sedatives | ⚠️ | ⚠️ | ⚠️ |
+| THC | ✅ | ✅ | ✅ |
+| Alcohol (hard) | ✅ | ✅ | ✅ |
+| Alcohol (light) | ✅ | ❌ | ✅ |
+| Buprenorphine | ✅ | ❌ | ✅ |
+| Suboxone | ✅ | ❌ | ✅ |
+| Methadone | ✅ | ❌ | ✅ |
+| Analgesic (Gabapentin) | ⚠️ | ❌ | ⚠️ |
+| Antidepressant | ⚠️ | ❌ | ⚠️ |
+| Muscle Relaxant | ❌ | ❌ | ❌ |
+| Mdma/Hallucinogen | ❌ | ❌ | ❌ |
+| Nicotine | ⚠️ | ❌ | ✅ |
+| Caffeine | ❌ | ❌ | ❌ |
 
-✅ Include | ⚠️ Conditional or flagged | ❌ Omit
+✅ Include | ⚠️ Conditional on ≥10 events in the −28 to −1 window | ❌ Omit

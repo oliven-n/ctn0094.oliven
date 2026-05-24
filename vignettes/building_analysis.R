@@ -17,11 +17,14 @@
 
 
 # ── 0. Libraries ──────────────────────────────────────────────────
-
+library(tidyverse) #added in 5-19, block 2 was throwing errors with mutate() and .default?
+library(dplyr) #redundant with above? also added in 5-19 after updating dplyr
 library(conflicted)
 suppressPackageStartupMessages(library(tidyverse))
 library(public.ctn0094data)
 conflicts_prefer(dplyr::filter)
+
+
 
 
 # ── 1. Base tibble: first randomization only ──────────────────────
@@ -31,19 +34,24 @@ conflicts_prefer(dplyr::filter)
 # are included. slice_min(when) picks the earliest randomization
 # per person, excluding the CTN-0030 re-randomization step.
 
-first_rand <- randomization |>
-  group_by(who) |>
-  slice_min(when, n = 1, with_ties = FALSE) |>
-  ungroup()
+# rewrote the first rand function to be more concise, checked identical
+first_rand <- randomization |> filter(which==1)
+glimpse(first_rand)
+
 
 # INSPECT — run this to confirm column names before proceeding
 glimpse(randomization)
 # Expected: who, when (day 0 = randomization), and a treatment column.
 # TODO: replace <TREATMENT_COL> below with the actual treatment column name.
+# N: not seeing placeholder here. treatment col is "project"
 
+#probably should rename this everybody_one_rand because thats what it is (NOT YET)
 analysis_base <- everybody |>
   inner_join(first_rand, by = "who") |>
   select(who, project)
+
+glimpse(analysis_base)
+
 
 
 # ── 2. all_drugs setup ────────────────────────────────────────────
@@ -75,22 +83,43 @@ drug_map <- c(
   "Alcohol"                = "Alcohol Missing Amnt"
 )
 
+# all_drugs_grouped_old <- all_drugs |>
+#   mutate(
+#     what_grouped = ifelse(
+#       what %in% names(drug_map),
+#       drug_map[as.character(what)],
+#       as.character(what)
+#     ),
+#     what_grouped = factor(what_grouped)
+#   )
+
+# Mutates the 'what' in all_drugs by the table's rule, makes new what_grouped col
+# like the above, but keeps metadata on the original labels.
 all_drugs_grouped <- all_drugs |>
   mutate(
-    what_grouped = ifelse(
-      what %in% names(drug_map),
-      drug_map[as.character(what)],
-      as.character(what)
+    what_grouped = case_when(
+      what %in% names(drug_map) ~ drug_map[as.character(what)],
+      .default = as.character(what)
     ),
     what_grouped = factor(what_grouped)
   )
+glimpse(all_drugs_grouped)
+# you can run the line 'names(all_drugs_grouped$what_grouped)' and get metadata
+
+
+# identical(all_drugs_grouped_old, all_drugs_grouped)
+# # gives FALSE because case_when keeps OG labels as metadata
+# isTRUE(all.equal(all_drugs_grouped_old, all_drugs_grouped, check.attributes = FALSE))
+# # Returns: TRUE because the above just compares elements
+
 
 # Primary filter: window + >= 10 events per category
 drugs_to_keep <- all_drugs_grouped |>
   filter(when < 0, when >= -28) |>
   count(what_grouped) |>
   filter(n >= 10) |>
-  pull(what_grouped)
+  pull(what_grouped) |>
+  unname()
 
 all_drugs_filtered <- all_drugs_grouped |>
   filter(when < 0, when >= -28) |>
@@ -115,7 +144,30 @@ illicit_low_prev <- all_drugs_filtered |>
   filter(pct_users < 1,
          !as.character(what_grouped) %in% prescribed_or_legal) |>
   pull(what_grouped)
+## Nat's edits not in pipeline yet vv
+prevalence_table <- all_drugs_filtered |>
+  distinct(who, what_grouped) |>
+  group_by(what_grouped) |>
+  summarize(n_users = n(), .groups = "drop") |>
+  mutate(pct_users = n_users / total_persons_all * 100)
 
+# Identifying the drugs that would be cut to see if sensible grouping(s) exist,
+# with particular thought into what drugs are good indicators of medication adherence
+# for making a composite signal of them later
+
+low_prev_drugs <- prevalence_table |> select(what_grouped, pct_users) |>
+  filter(pct_users < 1)
+
+illicit_low_prev_nat <- all_drugs_filtered |>
+  distinct(who, what_grouped) |>
+  group_by(what_grouped) |>
+  summarize(n_users = n(), .groups = "drop") |>
+  mutate(pct_users = n_users / total_persons_all * 100) |>
+  filter(pct_users < 1) |>
+  pull(what_grouped) |> unname()
+
+
+# End nat's edits
 all_drugs_filtered <- all_drugs_filtered |>
   filter(!what_grouped %in% illicit_low_prev)
 
@@ -144,17 +196,45 @@ nicotine_present <- "Nicotine" %in% surviving_drugs
 
 # ── 4. Helper functions ───────────────────────────────────────────
 
-# Longest consecutive-day streak for a sorted integer vector of days.
-# Returns 0 for empty input, 1 for isolated days with no consecutive runs.
+# Given a vector of day numbers, returns the length of the longest
+# run of back-to-back consecutive days.
+# Examples:  c(-5, -4, -3, -1)  →  3  (days -5 through -3)
+#            c(-5, -3, -1)      →  1  (no two days are adjacent)
+#            c()                →  0  (no days recorded)
 longest_streak <- function(days) {
+
+  # No days recorded at all
   if (length(days) == 0L) return(0L)
+
+  # Remove duplicates and put days in order
   days <- sort(unique(as.integer(days)))
+
+  # Only one day recorded — a streak of one
   if (length(days) == 1L) return(1L)
-  d <- diff(days)
-  r <- rle(d)
-  consec <- r$lengths[r$values == 1L]
-  if (length(consec) == 0L) return(1L)
-  max(consec) + 1L
+
+  # Calculate the gap between each adjacent pair of days.
+  # A gap of exactly 1 means those two days are back-to-back.
+  gaps <- diff(days)
+
+  # Walk through the gaps, counting the current streak and
+  # keeping track of the longest one seen so far.
+  current_streak <- 1L
+  longest        <- 1L
+
+  for (gap in gaps) {
+    if (gap == 1L) {
+      # Days are consecutive — extend the current streak
+      current_streak <- current_streak + 1L
+    } else {
+      # A gap in days — start a new streak from scratch
+      current_streak <- 1L
+    }
+
+    # Update the record if the current streak is the longest so far
+    if (current_streak > longest) longest <- current_streak
+  }
+
+  return(longest)
 }
 
 # Compute _days, _streak (optional), _binary for one drug category.
@@ -714,10 +794,10 @@ withdrawal_traj_feats <- withdrawal |>
 # ┌─────────────────────────────────────────────────────────────────┐
 # │ NOTE: Review rx composite assembly carefully.                   │
 # │                                                                 │
-# │ Categories included: Antidepressant, Analgesic,                │
+# │ Categories included: Antidepressant, Analgesic,                 │
 # │   Muscle Relaxant, Antiemetic                                   │
 # │                                                                 │
-# │ Benzodiazepine and Sedatives are prescribed but addictive;     │
+# │ Benzodiazepine and Sedatives are prescribed but addictive;      │
 # │ they are NOT included here. Add them back if you want a         │
 # │ broader "any Rx medication" feature rather than the             │
 # │ "non-addictive Rx medication" construct.                        │
