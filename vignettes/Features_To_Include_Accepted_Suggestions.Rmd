@@ -268,6 +268,10 @@ Drug grouping validation notes:
 
 ## Dataset Notes
 
+> ❌ **REJECTED CLAUDE SUGGESTION — Prescribed / legal categories table**: This table is not used in any computation in `building_analysis.R`. The secondary prevalence filter it was meant to support is never applied (the filter line is commented out). Additionally, the inclusion of `Opioid` as a "Prescribed opioid group" is conceptually incoherent — `Opioid` in `drug_map` captures prescription opioid *misuse* as reported on TLFB/UDS, not legitimately-prescribed opioids. Listing it alongside study medications (buprenorphine, methadone) as a "prescribed/legal" category conflates two entirely different phenomena and renders the table's framing meaningless. Struck through; not used.
+
+<del>
+
 ### Prescribed / legal drug categories in all_drugs_filtered
 
 The following categories surviving the filter are **prescribed medications or legal substances** — they should be treated differently from illicit drugs in feature construction (streak semantics are inverted; medication adherence signal; kept even at low prevalence):
@@ -292,6 +296,8 @@ The following categories surviving the filter are **prescribed medications or le
 | `Caffeine` | Legal | Likely omitted from features; near-universal use |
 
 **Why this matters:** The secondary prevalence filter (drop illicit drugs used by < 1% of participants) explicitly exempts all categories above. The prescribed categories also inform the medication adherence composite feature — see Database Notes.
+
+</del>
 
 ### Feature proposal
 

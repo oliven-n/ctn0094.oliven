@@ -209,31 +209,6 @@ Drug grouping validation notes:
 
 ### Dataset Notes
 
-#### Prescribed / legal drug categories in all_drugs_filtered
-
-The following categories surviving the filter are **prescribed medications or legal substances** — they should be treated differently from illicit drugs in feature construction (streak semantics are inverted; medication adherence signal; kept even at low prevalence):
-
-| Category | Type | Notes |
-|---|---|---|
-| `Buprenorphine` | Prescribed MOUD | Study medication / prior treatment |
-| `Suboxone` | Prescribed MOUD | Study medication / prior treatment |
-| `Methadone` | Prescribed MOUD | Study medication / prior treatment |
-| `Opioid` | Prescribed opioid group | Prescription misuse; may overlap with legitimate Rx |
-| `Benzodiazepine` | Prescribed CNS depressant | Addictive but prescribed; streak ≠ compulsion |
-| `Sedatives` | Prescribed CNS depressant | Non-benzo hypnotics/barbiturates |
-| `Antidepressant` | Prescribed psychiatric | Medication adherence marker |
-| `Analgesic` | Prescribed (Gabapentin + Acetaminophen) | Increasingly misused but still Rx-origin |
-| `Muscle Relaxant` | Prescribed | Operationalises "non-addictive medication" feature |
-| `Antiemetic` | Prescribed | Anti-nausea (e.g. ondansetron); adherence marker |
-| `Alcohol Heavy Amnt` | Legal | Substance of concern but not illicit |
-| `Alcohol Light Amnt` | Legal | |
-| `Alcohol Missing Amnt` | Legal | Unclassified drinking records |
-| `Cannabinoids` | Legal/borderline | THC + K2; legal in some states during trial period |
-| `Nicotine` | Legal | |
-| `Caffeine` | Legal | Likely omitted from features; near-universal use |
-
-**Why this matters:** The secondary prevalence filter (drop illicit drugs used by < 1% of participants) explicitly exempts all categories above. The prescribed categories also inform the medication adherence composite feature — see Database Notes.
-
 ---
 
 # ── 3. (Reserved) ────────────────────────────────────────────────
