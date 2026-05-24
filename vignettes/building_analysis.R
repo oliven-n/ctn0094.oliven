@@ -137,7 +137,7 @@ all_drugs_filtered <- all_drugs_grouped |>
 #   "Buprenorphine", "Suboxone", "Methadone",
 #   "Benzodiazepine", "Sedatives", "Opioid",
 #   "Muscle Relaxant", "Analgesic", "Antidepressant", "Antiemetic",
-#   "Heavy Drinking", "Light Drinking", "Alcohol Missing Amnt",
+#   "Alcohol Heavy Amnt", "Alcohol Light Amnt", "Alcohol Missing Amnt",
 #   "Cannabinoids", "Nicotine", "Caffeine"
 # )
 #
@@ -311,13 +311,13 @@ drug_feats <- reduce(drug_feat_list, full_join, by = "who")
 # ── 6. Derived alcohol feature ────────────────────────────────────
 # [Features_To_Include_Accepted_Suggestions.Rmd → all_drugs]
 #
-# "Restraint" = heavy drinking days - light drinking days.
+# "Restraint" = light drinking days - heavy drinking days.
 # Computed after joining raw counts; requires both columns to exist.
 
 drug_feats <- drug_feats |>
   mutate(
-    alcohol_restraint = replace_na(alcohol_heavy_amnt_days, 0L) -
-                        replace_na(alcohol_light_amnt_days, 0L)
+    alcohol_restraint = replace_na(alcohol_light_amnt_days, 0L) -
+                        replace_na(alcohol_heavy_amnt_days, 0L)
   )
 
 
@@ -354,31 +354,38 @@ drug_breadth <- all_drugs_filtered |>
 # count as a lie even if the heroin report was honest.
 # Consider upgrading to substance-level matching later.
 
-uds_positive_days <- all_drugs |>
-  filter(source %in% c("UDS", "UDSAB"), when >= -28, when < 0) |>
-  distinct(who, when)
-
-tfb_positive_days <- all_drugs |>
-  filter(source == "TFB", when >= -28, when < 0) |>
-  distinct(who, when)
-
-# Days where UDS/UDSAB found something but TLFB reported nothing
-lie_days <- anti_join(uds_positive_days, tfb_positive_days, by = c("who", "when"))
-
-lie_count <- lie_days |>
-  group_by(who) |>
-  summarize(lie_count = n(), .groups = "drop")
-
-uds_total_days <- uds_positive_days |>
-  group_by(who) |>
-  summarize(uds_positive_total = n(), .groups = "drop")
-
-lie_feats <- lie_count |>
-  left_join(uds_total_days, by = "who") |>
-  mutate(
-    lie_rate = lie_count / uds_positive_total  # NA if uds_positive_total == 0
-  ) |>
-  select(who, lie_count, lie_rate)
+# DROPPED — lie_count / lie_rate
+# For nearly all participants there were no UDS or UDSAB screenings in the
+# pre-trial window. For those with screenings, self-report was more or less
+# consistent with UDS results, up to drug category grouping name differences.
+# This resulted in lie_count and lie_rate being NA or 0 for the vast majority
+# of participants. Features carry no predictive signal; excluded from tibble.
+#
+# uds_positive_days <- all_drugs |>
+#   filter(source %in% c("UDS", "UDSAB"), when >= -28, when < 0) |>
+#   distinct(who, when)
+#
+# tfb_positive_days <- all_drugs |>
+#   filter(source == "TFB", when >= -28, when < 0) |>
+#   distinct(who, when)
+#
+# # Days where UDS/UDSAB found something but TLFB reported nothing
+# lie_days <- anti_join(uds_positive_days, tfb_positive_days, by = c("who", "when"))
+#
+# lie_count <- lie_days |>
+#   group_by(who) |>
+#   summarize(lie_count = n(), .groups = "drop")
+#
+# uds_total_days <- uds_positive_days |>
+#   group_by(who) |>
+#   summarize(uds_positive_total = n(), .groups = "drop")
+#
+# lie_feats <- lie_count |>
+#   left_join(uds_total_days, by = "who") |>
+#   mutate(
+#     lie_rate = lie_count / uds_positive_total  # NA if uds_positive_total == 0
+#   ) |>
+#   select(who, lie_count, lie_rate)
 
 
 # ── 9. ASI features ───────────────────────────────────────────────
@@ -700,13 +707,13 @@ pain_hard_feats <- pain_hard_daily |>
 # ── 22. Database Notes: Pain × soft drug interaction ─────────────
 # [Features_To_Include_Accepted_Suggestions.Rmd → Database Notes: pain x tlfb 2]
 #
-# Soft drug composite: Cannabinoids, Light Drinking, Caffeine
-# (Alcohol hard excluded; Nicotine optional)
+# Soft drug composite: Cannabinoids, Alcohol Light Amnt, Caffeine
+# (Alcohol Heavy Amnt excluded; Nicotine not in all_drugs; Caffeine dropped by primary filter)
 #
 # Feature 1 — pain_softdrug_corr (expect negative or near zero)
 # Feature 2 — pain_highrisk_softdrug_rate (expect negative association with relapse)
 
-soft_drug_cats <- c("Cannabinoids", "Light Drinking", "Caffeine")
+soft_drug_cats <- c("Cannabinoids", "Alcohol Light Amnt", "Caffeine")
 
 soft_drug_days_flag <- all_drugs_filtered |>
   filter(as.character(what_grouped) %in% soft_drug_cats) |>
@@ -768,8 +775,8 @@ withdrawal_traj_feats <- withdrawal |>
 # ┌─────────────────────────────────────────────────────────────────┐
 # │ NOTE: Review rx composite assembly carefully.                   │
 # │                                                                 │
-# │ Categories included: Antidepressant, Analgesic,                 │
-# │   Muscle Relaxant, Antiemetic                                   │
+# │ Categories included: Analgesic, Muscle Relaxant, Antiemetic     │
+# │ (Antidepressant dropped by primary filter — 3 events only)      │
 # │                                                                 │
 # │ Benzodiazepine and Sedatives are prescribed but addictive;      │
 # │ they are NOT included here. Add them back if you want a         │
@@ -810,7 +817,7 @@ feature_list <- list(
   drug_feats,
   polydrug_days,
   drug_breadth,
-  lie_feats,
+  # lie_feats,  # DROPPED — see §8 note
   asi_feats,
   demo_feats,
   fager_feats,
@@ -834,14 +841,13 @@ analysis_tibble <- reduce(
   ~left_join(.x, .y, by = "who"),
   .init = analysis_base
 ) |>
-  # Fill NAs with 0 for all drug count / streak / binary columns.
-  # These NAs mean "did not use this substance" = 0, not "missing data".
+  # For drug features, NA means the person had zero observed events in the window —
+  # not a data collection failure. No use = 0 days, 0 streak, 0 binary.
+  # Clinical/demographic NAs are left as-is (genuine missing data).
   mutate(across(
-    matches("_days$|_streak$|_binary$|polydrug_days|drug_breadth|lie_count|rx_days|rx_categories|rx_any_binary"),
+    matches("_days$|_streak$|_binary$|polydrug_days|drug_breadth|rx_days|rx_categories|rx_any_binary"),
     ~replace_na(.x, 0)
   )) |>
-  # lie_rate: 0/0 is NA — leave as NA rather than imputing 0
-  # (a person with no UDS records cannot have a lie rate computed)
   mutate(
     alcohol_restraint = replace_na(alcohol_restraint, 0)
   )

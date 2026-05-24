@@ -66,7 +66,7 @@ Rather than using tlfb, I cleaned up all_drugs to give me more granular control 
 ```{r all-drugs-map}
 drug_map <- c(
   # opioid group, but keep heroin/fentanyl/buprenorphine/suboxone separate
-  "Acetaminophen"          = "Opioid",
+  "Acetaminophen"          = "Analgesic",
   "Codeine"                = "Opioid",
   "Hydrocodone"            = "Opioid",
   "Hydromorphone"          = "Opioid",
@@ -96,6 +96,9 @@ drug_map <- c(
   "Musclerelax"            = "Muscle Relaxant",
   "Mdma"                   = "MDMA/Hallucinogen",
   "Hallucinogen"           = "MDMA/Hallucinogen",
+  # Not aggregating — renaming only so all alcohol categories sort together alphabetically
+  "Heavy Drinking"         = "Alcohol Heavy Amnt",
+  "Light Drinking"         = "Alcohol Light Amnt",
   "Alcohol"                = "Alcohol Missing Amnt"
 )
 
@@ -129,7 +132,7 @@ prescribed_or_legal <- c(
   "Buprenorphine", "Suboxone", "Methadone",
   "Benzodiazepine", "Sedatives", "Opioid",
   "Muscle Relaxant", "Analgesic", "Antidepressant", "Antiemetic",
-  "Heavy Drinking", "Light Drinking", "Alcohol Missing Amnt",
+  "Alcohol Heavy Amnt", "Alcohol Light Amnt", "Alcohol Missing Amnt",
   "Cannabinoids", "Nicotine", "Caffeine"
 )
 
@@ -169,9 +172,9 @@ Include only drug categories that pass the `>=10 events` filter. Verify the fina
 | `crack_days` | Crack cocaine | Distinct use pattern from powder cocaine; include if ≥10 events |
 | `methamphetamine_days` | Methamphetamine | Stimulant; increasingly common in OUD populations |
 | `benzodiazepine_days` | Benzodiazepine | Cross-addiction; high overdose risk; strong predictor |
-| `thc_days` | THC | Complex relationship with opioid craving; include |
-| `alcohol_hard_days` | Alcohol (hard/heavy) | Heavy drinking directly predicts opioid relapse |
-| `alcohol_light_days` | Alcohol (light/moderate) | Lower risk but captures broader drinking behavior |
+| `cannabinoids_days` | Cannabinoids (THC + K2) | Complex relationship with opioid craving; include |
+| `alcohol_heavy_amnt_days` | Alcohol Heavy Amnt | Heavy drinking directly predicts opioid relapse |
+| `alcohol_light_amnt_days` | Alcohol Light Amnt | Lower risk but captures broader drinking behavior |
 | `buprenorphine_days` | Buprenorphine | Pre-study MOUD exposure; see "Took THEIR study drug" feature |
 | `suboxone_days` | Suboxone | Treated as buprenorphine-equivalent per Nat's note |
 | `methadone_days` | Methadone | Pre-study MOUD exposure |
@@ -204,15 +207,15 @@ Compute the longest consecutive-day streak for **addictive substances only**. St
 | `crack_streak` | Crack cocaine | Same rationale as cocaine |
 | `methamphetamine_streak` | Methamphetamine | High addiction potential; streak is meaningful |
 | `benzodiazepine_streak` | Benzodiazepine | Physical dependence develops; streak indicates severity |
-| `alcohol_hard_streak` | Alcohol (hard) | Heavy drinking streaks predict relapse more than isolated events |
-| `thc_streak` | THC | Cannabis use disorder is real; streak captures it |
+| `alcohol_heavy_amnt_streak` | Alcohol Heavy Amnt | Heavy drinking streaks predict relapse more than isolated events |
+| `cannabinoids_streak` | Cannabinoids (THC + K2) | Cannabis use disorder is real; streak captures it |
 | `sedatives_streak` *(conditional)* | Sedatives | Include if ≥10 events; same logic as benzos |
 
 **Omit streaks for:**
 
 - `buprenorphine`, `suboxone`, `methadone` — these are medications; a long streak is desirable adherence, not compulsive use
 - `antidepressant`, `analgesic` — prescription medications; streak ≠ addictive behavior
-- `alcohol_light` — light drinking streaks are less clinically meaningful
+- `alcohol_light_amnt` — light drinking streaks are less clinically meaningful
 - `caffeine` — omitted entirely
 
 ### Feature Proposal
@@ -245,17 +248,19 @@ What are the study drugs?
 
 ### Feature proposal
 
-Lie count. The number of days (not drugs, etc. days.) each person's drug results self reported from tlfb did not match their reports from UDS or UDSAB. If they over-reported something in tlfb that was not in uds/udsab, do not up the count. Only up the days count for under-reporting.
+> **⚠️ DROPPED — `lie_count` / `lie_rate`**: For nearly all participants there were no UDS or UDSAB screenings in the pre-trial window. For those with screenings, self-report was more or less consistent with UDS results, up to drug category grouping name differences. This resulted in `lie_count` and `lie_rate` being `NA` or `0` for the vast majority of participants. These features carry no predictive signal and have been excluded from the analysis tibble.
 
-Also compute a **normalized lie rate**: `lie_count / total_drug_positive_days` (where `total_drug_positive_days` is the number of days UDS or UDSAB detected any substance). The raw count is confounded by baseline drug use intensity — a person who used drugs 20 days has more opportunities to under-report than one who used 5 days. The rate controls for this. Include both the raw count and the rate as separate features. If `total_drug_positive_days = 0`, set rate to 0.
+~~Lie count. The number of days (not drugs, etc. days.) each person's drug results self reported from tlfb did not match their reports from UDS or UDSAB. If they over-reported something in tlfb that was not in uds/udsab, do not up the count. Only up the days count for under-reporting.~~
+
+~~Also compute a **normalized lie rate**: `lie_count / total_drug_positive_days` (where `total_drug_positive_days` is the number of days UDS or UDSAB detected any substance). The raw count is confounded by baseline drug use intensity — a person who used drugs 20 days has more opportunities to under-report than one who used 5 days. The rate controls for this. Include both the raw count and the rate as separate features. If `total_drug_positive_days = 0`, set rate to 0.~~
 
 ### Feature proposal
 
 Drug grouping validation notes:
 
-1. **⚠️ WARNING — Acetaminophen in the "Opioid" group**: Acetaminophen (APAP) is NOT an opioid. It likely appears here as the non-opioid component of combination pills (Vicodin = hydrocodone + APAP; Percocet = oxycodone + APAP), where both ingredients are logged as separate rows. If so, including APAP in the "Opioid" group **double-counts** those use events — `opioid_days` gets inflated by APAP rows that are already covered by the hydrocodone/oxycodone rows. Recommended: verify whether Acetaminophen rows have a co-occurring opioid on the same day for the same person. If yes in the large majority of cases, remove `"Acetaminophen" = "Opioid"` from `drug_map` entirely.
+1. ~~**⚠️ WARNING — Acetaminophen in the "Opioid" group**~~ **✅ RESOLVED**: Acetaminophen was moved from the "Opioid" group to the "Analgesic" group in `building_analysis.R` (`drug_map`). It is now grouped with Gabapentin as `Analgesic`, preventing double-counting against `opioid_days`. See `drug_specific_features.md` → Analgesic section for the rationale.
 
-2. **CONSIDER — Gabapentin standalone instead of "Analgesic"**: In OUD populations, gabapentin is a drug of misuse, not simply a prescribed pain medication. It potentiates opioid euphoria and is used illicitly to manage withdrawal symptoms. Grouping it as "Analgesic" conflates it with benign prescription-medication use. Recommended: remove `"Gabapentin" = "Analgesic"` from `drug_map` so it keeps its own name as a standalone category.
+2. ~~**CONSIDER — Gabapentin standalone instead of "Analgesic"**~~ **✅ DECIDED — keep as "Analgesic"**: Gabapentin remains grouped with Acetaminophen under the `Analgesic` category in `building_analysis.R`. Rationale: Acetaminophen alone has only 5 events in the window and fails the ≥10 primary filter; grouping with Gabapentin (23 events) gives a combined count of 28 and allows both to survive. The `analgesic` features are therefore best read as "any prescribed non-opioid analgesic," not as a pure gabapentin misuse signal. The standalone-gabapentin option remains available if the composite signal proves uninformative at modelling time.
 
 ### Feature proposal
 
@@ -276,11 +281,11 @@ The following categories surviving the filter are **prescribed medications or le
 | `Benzodiazepine` | Prescribed CNS depressant | Addictive but prescribed; streak ≠ compulsion |
 | `Sedatives` | Prescribed CNS depressant | Non-benzo hypnotics/barbiturates |
 | `Antidepressant` | Prescribed psychiatric | Medication adherence marker |
-| `Analgesic` | Prescribed (Gabapentin) | Increasingly misused but still Rx-origin |
+| `Analgesic` | Prescribed (Gabapentin + Acetaminophen) | Increasingly misused but still Rx-origin |
 | `Muscle Relaxant` | Prescribed | Operationalises "non-addictive medication" feature |
 | `Antiemetic` | Prescribed | Anti-nausea (e.g. ondansetron); adherence marker |
-| `Heavy Drinking` | Legal | Substance of concern but not illicit |
-| `Light Drinking` | Legal | |
+| `Alcohol Heavy Amnt` | Legal | Substance of concern but not illicit |
+| `Alcohol Light Amnt` | Legal | |
 | `Alcohol Missing Amnt` | Legal | Unclassified drinking records |
 | `Cannabinoids` | Legal/borderline | THC + K2; legal in some states during trial period |
 | `Nicotine` | Legal | |
@@ -673,7 +678,7 @@ Apply the same two-feature operationalisation as pain × hard drugs above:
 
 The hypothesis predicts a **negative** `pain_softdrug_corr` (or near zero), and a **negative** association between `pain_highrisk_softdrug_rate` and relapse. This is the protective-substitution hypothesis and is distinct from the general soft-drug use main effect.
 
-**Soft drug composite definition**: THC + Alcohol (light) + Caffeine. Exclude Alcohol (hard) from the soft drug composite since it crosses into substance-of-concern territory. Nicotine could be included or kept separate.
+**Soft drug composite definition**: Cannabinoids + Alcohol Light Amnt + Caffeine (using post-`drug_map` category names). Exclude Alcohol Heavy Amnt from the soft drug composite since it crosses into substance-of-concern territory. Nicotine could be included or kept separate.
 
 Confirmatory factor: Self-medication tendency
 
@@ -698,7 +703,7 @@ Confirmatory factor: Escalating dependence severity
 **Categories that contribute to the composite** (excludes MOUD and legal non-Rx substances):
 
 - `Antidepressant` — psychiatric medication adherence
-- `Analgesic` (Gabapentin) — pain/prescription management
+- `Analgesic` (Gabapentin + Acetaminophen) — pain/prescription management
 - `Muscle Relaxant` — prescribed non-addictive medication
 - `Antiemetic` — anti-nausea prescription (e.g. ondansetron)
 - `Sedatives` / `Benzodiazepine` — prescribed CNS depressants *(note: these ARE addictive; consider excluding from the "non-addictive" composite and keeping as separate features)*
