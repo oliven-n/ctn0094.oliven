@@ -58,7 +58,7 @@ glimpse(analysis_base)
 # [Features_To_Include_Accepted_Suggestions.Rmd → all_drugs]
 
 drug_map <- c(
-  "Acetaminophen"          = "Opioid",
+  "Acetaminophen"          = "Analgesic",
   "Codeine"                = "Opioid",
   "Hydrocodone"            = "Opioid",
   "Hydromorphone"          = "Opioid",
@@ -80,6 +80,9 @@ drug_map <- c(
   "Musclerelax"            = "Muscle Relaxant",
   "Mdma"                   = "MDMA/Hallucinogen",
   "Hallucinogen"           = "MDMA/Hallucinogen",
+  # Not aggregating — renaming only so all alcohol categories sort together alphabetically
+  "Heavy Drinking"         = "Alcohol Heavy Amnt",
+  "Light Drinking"         = "Alcohol Light Amnt",
   "Alcohol"                = "Alcohol Missing Amnt"
 )
 
@@ -125,7 +128,11 @@ all_drugs_filtered <- all_drugs_grouped |>
   filter(when < 0, when >= -28) |>
   filter(what_grouped %in% drugs_to_keep)
 
-# Secondary filter (Claude's implementation — NOT in pipeline, commented out):
+# Secondary filter: remove <1% users. NOT in effect yet.
+
+# (Claude's implementation — NOT in pipeline, commented out):
+# I didn't like it's weird manual exception system, it was arbitrary
+
 # prescribed_or_legal <- c(
 #   "Buprenorphine", "Suboxone", "Methadone",
 #   "Benzodiazepine", "Sedatives", "Opioid",
@@ -134,6 +141,7 @@ all_drugs_filtered <- all_drugs_grouped |>
 #   "Cannabinoids", "Nicotine", "Caffeine"
 # )
 #
+# total_persons_all <- n_distinct(all_drugs_filtered$who)
 # illicit_low_prev <- all_drugs_filtered |>
 #   distinct(who, what_grouped) |>
 #   group_by(what_grouped) |>
@@ -143,10 +151,11 @@ all_drugs_filtered <- all_drugs_grouped |>
 #          !as.character(what_grouped) %in% prescribed_or_legal) |>
 #   pull(what_grouped)
 
-total_persons_all <- n_distinct(all_drugs_filtered$who)
 
-# Diagnostic objects — inspect prevalence but do NOT apply secondary filter.
-# all_drugs_filtered stays as the primary-filter result (21 categories).
+# ----- Begin Nat's Edits
+# Nat's implementation of secondary crit, still not in effect
+
+total_persons_all <- n_distinct(all_drugs_filtered$who)
 prevalence_table <- all_drugs_filtered |>
   distinct(who, what_grouped) |>
   group_by(what_grouped) |>
@@ -157,21 +166,17 @@ prevalence_table <- all_drugs_filtered |>
 # with particular thought into what drugs are good indicators of medication adherence
 # for making a composite signal of them later
 
+#This is a cuter substitute for illicit_low_prev_nat, and identical() check gives true
 low_prev_drugs <- prevalence_table |> select(what_grouped, pct_users) |>
-  filter(pct_users < 1)
+  filter(pct_users < 1) |> pull(what_grouped) |> unname()
 
-illicit_low_prev_nat <- all_drugs_filtered |>
-  distinct(who, what_grouped) |>
-  group_by(what_grouped) |>
-  summarize(n_users = n(), .groups = "drop") |>
-  mutate(pct_users = n_users / total_persons_all * 100) |>
-  filter(pct_users < 1) |>
-  pull(what_grouped) |> unname()
+# Commenting the below line out because we are not updating all_drugs_filtered based on secondary crit
+# all_drugs_filtered <- all_drugs_filtered |>
+#   filter(!what_grouped %in% low_prev_drugs)
 
 
-# End nat's edits
-all_drugs_filtered <- all_drugs_filtered |>
-  filter(!what_grouped %in% illicit_low_prev)
+# ----- End Nat's Edits
+
 
 # Confirm surviving categories
 surviving_drugs <- as.character(unique(all_drugs_filtered$what_grouped))
@@ -179,21 +184,9 @@ cat("Surviving drug categories:\n")
 print(sort(surviving_drugs))
 
 
-# ── 3. Nicotine check ─────────────────────────────────────────────
-# [drug_specific_features.md → Nicotine]
-#
-# Nicotine was not visible in the pre-study events table. Investigate
-# before deciding whether to include nicotine features.
-
-nicotine_check <- all_drugs |>
-  filter(grepl("nic|tobacco|smok|cig", what, ignore.case = TRUE)) |>
-  count(what)
-print(nicotine_check)
-# If output is empty, nicotine is not in all_drugs. Rely on Fagerstrom only.
-# If records exist, check whether "Nicotine" (or variant) survived the
-# all_drugs_filtered pipeline and add it to drug_map if needed.
-
-nicotine_present <- "Nicotine" %in% surviving_drugs
+# ── 3. (Reserved) ────────────────────────────────────────────────
+# Nicotine is not present in all_drugs. Nicotine dependence is captured
+# via the Fagerstrom score only (see later sections).
 
 
 # ── 4. Helper functions ───────────────────────────────────────────
@@ -277,60 +270,39 @@ drug_feature_block <- function(drug_name, prefix, streak = TRUE,
 
 drug_feat_list <- list(
 
-  # Hard / Illicit Drugs
-  drug_feature_block("Heroin",          "heroin"),
-  drug_feature_block("Fentanyl",        "fentanyl"),
-  drug_feature_block("Cocaine",         "cocaine"),
-  drug_feature_block("Crack",           "crack"),
-  drug_feature_block("Methamphetamine", "methamphetamine"),
-  drug_feature_block("Amphetamine",     "amphetamine"),     # new; 844 events
+  # 21 calls = 21 surviving categories after primary filter (>= 10 events).
+  # Ordered alphabetically by drug name. Prefixes match drug names exactly
+  # (underscores for spaces, case-insensitive).
 
-  # Sedatives / CNS Depressants
-  drug_feature_block("Benzodiazepine",  "benzodiazepine"),
-  drug_feature_block("Sedatives",       "sedatives"),       # 263 events
-
-  # Cannabis
-  drug_feature_block("Cannabinoids",    "cannabinoids"),    # THC + K2
-
-  # Alcohol
-  drug_feature_block("Heavy Drinking",       "alcohol_hard"),
-  drug_feature_block("Light Drinking",       "alcohol_light",       streak = FALSE),
+  drug_feature_block("Alcohol Heavy Amnt",   "alcohol_heavy_amnt"),
+  # TODO (for you): revisit alcohol_light_amnt streak — omitted because its
+  # 1,704 events are in the same ballpark as heavy (1,719); light drinking
+  # streaks also have low clinical significance for OUD prediction.
+  drug_feature_block("Alcohol Light Amnt",   "alcohol_light_amnt",   streak = FALSE),
+  # TODO (for you): revisit alcohol_missing_amnt streak — omitted because its
+  # 1,449 events are in the same ballpark as heavy (1,719) and light (1,704).
+  # Re-check if usage patterns closely track heavy drinking before re-including.
   drug_feature_block("Alcohol Missing Amnt", "alcohol_missing_amnt", streak = FALSE),
+  drug_feature_block("Amphetamine",          "amphetamine"),
+  drug_feature_block("Analgesic",            "analgesic",            streak = FALSE),
+  drug_feature_block("Antiemetic",           "antiemetic",           streak = FALSE),
+  drug_feature_block("Benzodiazepine",       "benzodiazepine"),
+  drug_feature_block("Buprenorphine",        "buprenorphine",        streak = FALSE),
+  drug_feature_block("Cannabinoids",         "cannabinoids"),
+  drug_feature_block("Cocaine",              "cocaine"),
+  drug_feature_block("Crack",               "crack"),
+  drug_feature_block("Fentanyl",             "fentanyl"),
+  drug_feature_block("Heroin",              "heroin"),
+  drug_feature_block("MDMA/Hallucinogen",    "mdma_hallucinogen",    streak = FALSE),
+  drug_feature_block("Methadone",            "methadone",            streak = FALSE),
+  drug_feature_block("Methamphetamine",      "methamphetamine"),
+  drug_feature_block("Muscle Relaxant",      "muscle_relaxant",      streak = FALSE),
+  drug_feature_block("Opioid",              "opioid"),
+  drug_feature_block("PCP",                 "pcp"),
+  drug_feature_block("Sedatives",            "sedatives"),
+  drug_feature_block("Suboxone",             "suboxone",             streak = FALSE)
 
-  # Study Medications (pre-randomisation)
-  drug_feature_block("Buprenorphine",   "buprenorphine",   streak = FALSE),
-  drug_feature_block("Suboxone",        "suboxone",        streak = FALSE),
-  drug_feature_block("Methadone",       "methadone",       streak = FALSE),
-
-  # Prescription Opioids
-  drug_feature_block("Opioid",          "opioid"),
-
-  # Prescription / Non-Addictive Medications (standalone features)
-  drug_feature_block("Analgesic",       "analgesic",       streak = FALSE),  # 23 events
-  drug_feature_block("Antiemetic",      "antiemetic",      streak = FALSE),  # 16 events; also feeds rx composite
-
-  # Conditional: Antidepressant — only include if it survived the filter
-  if ("Antidepressant" %in% surviving_drugs)
-    drug_feature_block("Antidepressant", "antidepressant", streak = FALSE)
-  else
-    NULL,
-
-  # Conditional: Nicotine — only include if records exist in all_drugs
-  if (nicotine_present)
-    drug_feature_block("Nicotine", "nicotine", streak = FALSE)
-  else
-    NULL,
-
-  # FLAGGED FOR DELETION: MDMA/Hallucinogen
-  # ~100 events after merge; likely < 1% prevalence; weak OUD link.
-  # Remove this block once secondary filter confirms it is dropped,
-  # or at next pipeline cleanup.
-  if ("MDMA/Hallucinogen" %in% surviving_drugs)
-    drug_feature_block("MDMA/Hallucinogen", "mdma", streak = FALSE)
-  else
-    NULL
-
-) |> purrr::compact()   # drop NULLs from conditional blocks
+) |> purrr::compact()
 
 # Merge all drug feature tibbles into one wide tibble
 drug_feats <- reduce(drug_feat_list, full_join, by = "who")
@@ -344,8 +316,8 @@ drug_feats <- reduce(drug_feat_list, full_join, by = "who")
 
 drug_feats <- drug_feats |>
   mutate(
-    alcohol_restraint = replace_na(alcohol_hard_days, 0L) -
-                        replace_na(alcohol_light_days, 0L)
+    alcohol_restraint = replace_na(alcohol_heavy_amnt_days, 0L) -
+                        replace_na(alcohol_light_amnt_days, 0L)
   )
 
 
