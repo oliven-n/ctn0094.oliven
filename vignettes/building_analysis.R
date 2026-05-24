@@ -125,26 +125,28 @@ all_drugs_filtered <- all_drugs_grouped |>
   filter(when < 0, when >= -28) |>
   filter(what_grouped %in% drugs_to_keep)
 
-# Secondary filter: drop illicit categories with < 1% user prevalence
-prescribed_or_legal <- c(
-  "Buprenorphine", "Suboxone", "Methadone",
-  "Benzodiazepine", "Sedatives", "Opioid",
-  "Muscle Relaxant", "Analgesic", "Antidepressant", "Antiemetic",
-  "Heavy Drinking", "Light Drinking", "Alcohol Missing Amnt",
-  "Cannabinoids", "Nicotine", "Caffeine"
-)
+# Secondary filter (Claude's implementation — NOT in pipeline, commented out):
+# prescribed_or_legal <- c(
+#   "Buprenorphine", "Suboxone", "Methadone",
+#   "Benzodiazepine", "Sedatives", "Opioid",
+#   "Muscle Relaxant", "Analgesic", "Antidepressant", "Antiemetic",
+#   "Heavy Drinking", "Light Drinking", "Alcohol Missing Amnt",
+#   "Cannabinoids", "Nicotine", "Caffeine"
+# )
+#
+# illicit_low_prev <- all_drugs_filtered |>
+#   distinct(who, what_grouped) |>
+#   group_by(what_grouped) |>
+#   summarize(n_users = n(), .groups = "drop") |>
+#   mutate(pct_users = n_users / total_persons_all * 100) |>
+#   filter(pct_users < 1,
+#          !as.character(what_grouped) %in% prescribed_or_legal) |>
+#   pull(what_grouped)
 
 total_persons_all <- n_distinct(all_drugs_filtered$who)
 
-illicit_low_prev <- all_drugs_filtered |>
-  distinct(who, what_grouped) |>
-  group_by(what_grouped) |>
-  summarize(n_users = n(), .groups = "drop") |>
-  mutate(pct_users = n_users / total_persons_all * 100) |>
-  filter(pct_users < 1,
-         !as.character(what_grouped) %in% prescribed_or_legal) |>
-  pull(what_grouped)
-## Nat's edits not in pipeline yet vv
+# Diagnostic objects — inspect prevalence but do NOT apply secondary filter.
+# all_drugs_filtered stays as the primary-filter result (21 categories).
 prevalence_table <- all_drugs_filtered |>
   distinct(who, what_grouped) |>
   group_by(what_grouped) |>
