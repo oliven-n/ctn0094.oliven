@@ -390,31 +390,19 @@ drug_breadth <- all_drugs_filtered |>
 
 # ── 9. ASI features ───────────────────────────────────────────────
 # [Features_To_Include_Accepted_Suggestions.Rmd → asi]
-
-# INSPECT — run this and check column names before proceeding
-glimpse(asi)
-# Expected: who + iv_drug_use (or similar) + ASI composite subscores
-# (e.g. asi_drug, asi_alcohol, asi_legal, asi_family, asi_psychiatric,
-#  asi_employment, asi_medical — exact names depend on dataset version)
-# TODO: replace <IV_COL> and <COMPOSITE_COLS> below with actual names
+#
+# glimpse(asi): 2 columns — who (int), used_iv (fct: "Yes"/"No"/NA).
+# No ASI composite subscores present in this dataset version.
 
 asi_feats <- asi |>
   group_by(who) |>
-  slice(1) |>   # one row per person (ASI is baseline, should already be unique)
+  slice(1) |>   # one row per person (asi is already unique per who)
   ungroup() |>
   transmute(
     who,
-    # TODO: replace with actual IV drug use column name
-    # asi_iv_binary = as.integer(<IV_COL> == "Yes"),
-
-    # TODO: include ASI composite subscores if present, e.g.:
-    # asi_drug_composite       = <drug_composite_col>,
-    # asi_alcohol_composite    = <alcohol_composite_col>,
-    # asi_legal_composite      = <legal_composite_col>,
-    # asi_family_composite     = <family_composite_col>,
-    # asi_psychiatric_composite = <psychiatric_composite_col>,
-    # asi_employment_composite  = <employment_composite_col>,
-    # asi_medical_composite     = <medical_composite_col>
+    asi_iv_binary = as.integer(used_iv == "Yes")
+    # NOTE: ASI composite subscores (drug, alcohol, legal, family, psychiatric,
+    # employment, medical) are not present in this dataset version.
   )
 
 
@@ -442,20 +430,32 @@ demo_feats <- demographics |>
 
 # ── 11. Fagerstrom ────────────────────────────────────────────────
 # [Features_To_Include_Accepted_Suggestions.Rmd → fagerstrom]
-
-# INSPECT — run this and check column names
-glimpse(fagerstrom)
-# Expected: who + item columns summing to a total FTND score (0-10)
-# TODO: replace with actual column name(s)
+#
+# glimpse(fagerstrom): who (int), is_smoker (fct: Yes/No),
+# ftnd (fct: 0–10, NA for non-smokers), per_day (fct: 10 OR LESS /
+# 11-20 / 21-30 / 31 OR MORE / "" for non-smokers).
+# Non-smoker NAs in ftnd imputed to "0"; "" in per_day relabelled "None".
+# Both kept as ordered factors for flexibility at recipe time.
 
 fager_feats <- fagerstrom |>
   group_by(who) |>
   slice(1) |>
   ungroup() |>
   transmute(
-    who
-    # TODO: fagerstrom_score = <total_score_col>
-    # If only items are present: fagerstrom_score = <item1> + <item2> + ...
+    who,
+    # to binary on is_smoker
+    is_smoker  = as.integer(tolower(as.character(is_smoker)) == "yes"),
+    # ordered factor; non-smoker NAs imputed to "0" (unambiguously zero dependence)
+    ftnd_score = ordered(
+      if_else(is_smoker == 0, "0", as.character(ftnd)),
+      levels = as.character(0:10)
+    ),
+    # "" means non-smoker; relabelled "None" and given explicit ordered levels
+    per_day    = factor(
+      if_else(as.character(per_day) == "", "None", as.character(per_day)),
+      levels  = c("None", "10 OR LESS", "11-20", "21-30", "31 OR MORE"),
+      ordered = TRUE
+    )
   )
 
 
