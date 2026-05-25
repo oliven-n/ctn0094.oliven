@@ -234,7 +234,7 @@ analysis_tibble |>
       "Heroin days", "Pain score",
       "Withdrawal score", "Major depression"
     ),
-    align = "llrrrrr"
+    align = "llrrrrrr"
   )
 ```
 
