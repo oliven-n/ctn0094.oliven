@@ -4,3 +4,5 @@ dated_progress_notes.md
 ^\.positai$
 ^\.claude$
 inst/.gitkeep
+^docs$
+\.zip$
