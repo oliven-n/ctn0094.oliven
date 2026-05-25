@@ -1155,3 +1155,62 @@ rbs_inconsistency_feats <- rbs_inconsistency_detail |>
 cat("\n── Table A3: Per-who inconsistency feature summary ──\n")
 glimpse(rbs_inconsistency_feats)
 summary(rbs_inconsistency_feats |> select(-who))
+
+# ── A.7 Cleaner binary flags: denial vs unobserved claim ─────────────────────
+#
+# The continuous inconsistency score above is dominated by the CTN-0051 day-
+# bucketing artifact (rbs values of 0/4/30 inflate differences vs exact counts).
+# A binary version survives this: the direction of the zero-crossing is meaningful
+# regardless of how days are counted.
+#
+# Two flags per (who, drug category):
+#   denied_but_obs  — rbs reports 0 days, but all_drugs has ≥1 event in window.
+#                     Interpretation: participant denies use that records show.
+#                     Classic denial/minimization signal.
+#   claimed_but_unobs — rbs reports >0 days, but all_drugs has 0 events in window.
+#                     Interpretation: participant reports use that left no record.
+#                     Could be genuine use missed by tlfb, or recall inflation.
+#
+# Note: both flags are noisy for "opioid" due to MOUD contamination.
+# The heroin and cocaine flags are the cleanest signal.
+
+rbs_denial_detail <- rbs_inconsistency_detail |>
+  mutate(
+    denied_but_obs    = as.integer(rbs_days == 0L & obs_days >  0L),
+    claimed_but_unobs = as.integer(rbs_days >  0L & obs_days == 0L)
+  )
+
+# Table A4: prevalence of each flag by drug category.
+# Columns:
+#   n                  — participants with rbs data for this drug
+#   pct_denied_but_obs — fraction who denied use despite records showing use
+#   pct_claimed_unobs  — fraction who reported use with no corresponding records
+cat("\n── Table A4: Binary denial flags by drug category ──\n")
+rbs_denial_detail |>
+  group_by(rbs_what) |>
+  summarize(
+    n                  = n(),
+    pct_denied_but_obs = round(mean(denied_but_obs,    na.rm = TRUE), 3),
+    pct_claimed_unobs  = round(mean(claimed_but_unobs, na.rm = TRUE), 3),
+    .groups = "drop"
+  ) |>
+  print()
+
+# Per-who binary denial features — one row per participant.
+# Columns:
+#   n_denied_but_obs    — count of drug categories where participant denied
+#                         use despite records (0–5; 5 = denied all 5 categories)
+#   n_claimed_but_unobs — count of drug categories claimed with no records
+#   any_denial          — 1 if n_denied_but_obs > 0 (binary flag)
+rbs_denial_feats <- rbs_denial_detail |>
+  group_by(who) |>
+  summarize(
+    n_denied_but_obs    = sum(denied_but_obs,    na.rm = TRUE),
+    n_claimed_but_unobs = sum(claimed_but_unobs, na.rm = TRUE),
+    any_denial          = as.integer(any(denied_but_obs == 1L, na.rm = TRUE)),
+    .groups = "drop"
+  )
+
+cat("\n── Table A5: Per-who binary denial feature summary ──\n")
+glimpse(rbs_denial_feats)
+summary(rbs_denial_feats |> select(-who))
