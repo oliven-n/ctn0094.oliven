@@ -751,8 +751,8 @@ study_drug_feats <- analysis_base |>
 #
 # withdrawal_pre_post has exactly 1 pre-induction COWS/SOWS observation
 # per person — baseline withdrawal severity at treatment entry.
-# Mirrors pain_main_feats (§12): direct transmute, no window needed.
-# Factor levels: 0=None, 1=mild, 2=moderate, 3=severe → coerced to integer.
+# Same coercion as §19 (withdrawal_pp_feats): as.integer(as.character()) on the
+# ordered factor. Factor levels: 0=None, 1=mild, 2=moderate, 3=severe.
 #
 # NOTE: windowed longitudinal aggregates (withdrawal_mean, withdrawal_max,
 # wdl_pct_days_severe, wdl_pct_days_any) were implemented but removed —
@@ -761,12 +761,11 @@ study_drug_feats <- analysis_base |>
 
 wdl_main_feats <- withdrawal_pre_post |>
   filter(what == "pre") |>
-  mutate(withdrawal_pre_score = as.integer(as.character(withdrawal))) |>
-  transmute(who, withdrawal_pre_score)
+  transmute(who, withdrawal_pre_score = as.integer(as.character(withdrawal)))
 
-# DROPPED — windowed aggregates via day_zero anchor. withdrawal has only
-# 1 pre-induction observation per person; aggregates collapse to the scalar
-# above. Kept for reference only.
+# DROPPED — withdrawal_pre_post has exactly 1 "pre" obs per person, so
+# windowed aggregates are algebraically equivalent to the scalar above.
+# Kept for reference only.
 # wdl_main_feats_longitudinal <- withdrawal |>
 #   mutate(score = as.integer(as.character(withdrawal))) |>
 #   left_join(day_zero_lookup, by = "who") |>
