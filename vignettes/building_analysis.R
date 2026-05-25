@@ -766,7 +766,16 @@ study_drug_feats <- analysis_base |>
 # anchor. All features will be all-NA until the day_zero window calibration
 # commit. DO NOT change the filter here — that is a separate commit.
 
-wdl_main_feats <- analysis_base |> select(who)
+wdl_main_feats <- analysis_base |>
+  select(who) |>
+  mutate(
+    # NOTE TO NAT: remove these NA placeholders and uncomment the full
+    # implementation below the moment withdrawal window data is available.
+    withdrawal_mean     = NA_real_,
+    withdrawal_max      = NA_real_,
+    wdl_pct_days_severe = NA_real_,
+    wdl_pct_days_any    = NA_real_
+  )
 
 # wdl_main_feats <- withdrawal |>
 #   mutate(score = as.integer(as.character(withdrawal))) |>
