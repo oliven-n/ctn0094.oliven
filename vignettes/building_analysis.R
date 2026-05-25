@@ -795,7 +795,51 @@ psych_cross_feats <- analysis_base |>
   )
 
 
-# ── 24. Database Notes: Withdrawal trajectory ─────────────────────
+# ── 24. Housing stability (cross-dataset) ─────────────────────────
+# [Features_To_Include_Accepted_Suggestions.Rmd → Database Notes]
+#
+# Combines is_living_stable (demographics, all studies, subjective perceived
+# stability) with is_homeless (qol, CTN-0051 only, objective housing status)
+# into a single 3-level ordered factor.
+#
+# is_living_stable is already 0/1 int in demo_feats.
+# is_homeless is already 0/1 int in qol_feats.
+# Pairs written as (is_living_stable, is_homeless):
+#
+#   Level 1 "unstable_homeless": (0,1) or (NA,1) — homeless drives assignment
+#   Level 2 "mid_stability":     (1,1) shelter resident; (0,0) housed but
+#                                precarious; (0,NA) unstable + unknown (non-CTN-0051)
+#   Level 3 "stable_housed":     (1,0) clearly stable; (NA,0) not-homeless drives;
+#                                (1,NA) stable implies not homeless (non-CTN-0051)
+#   NA:                          (NA,NA) — both unknown, not imputed
+#
+# Note: 128 (1,1) cases are all CTN-0051 shelter residents. Not a data error.
+
+housing_stability_feats <- analysis_base |>
+  left_join(select(demo_feats, who, is_living_stable), by = "who") |>
+  left_join(select(qol_feats,  who, is_homeless),      by = "who") |>
+  transmute(
+    who,
+    housing_stability_ord = ordered(
+      case_when(
+        # Level 1: homeless AND (unstable or stability unknown)
+        is_homeless == 1L & (is_living_stable == 0L | is.na(is_living_stable)) ~ "unstable_homeless",
+        # Level 2
+        is_homeless == 1L &  is_living_stable == 1L   ~ "mid_stability",
+        is_homeless == 0L &  is_living_stable == 0L   ~ "mid_stability",
+        is.na(is_homeless) & is_living_stable == 0L   ~ "mid_stability",
+        # Level 3
+        is_homeless == 0L &  is_living_stable == 1L   ~ "stable_housed",
+        is_homeless == 0L &  is.na(is_living_stable)  ~ "stable_housed",
+        is.na(is_homeless) & is_living_stable == 1L   ~ "stable_housed",
+        .default = NA_character_
+      ),
+      levels = c("unstable_homeless", "mid_stability", "stable_housed")
+    )
+  )
+
+
+# ── 25. Database Notes: Withdrawal trajectory ─────────────────────
 # [Features_To_Include_Accepted_Suggestions.Rmd → Database Notes]
 #
 # Slope of withdrawal symptom scores (COWS/SOWS) over days -28 to -1.
@@ -819,7 +863,7 @@ withdrawal_traj_feats <- withdrawal |>
   # },
 
 
-# ── 25. Database Notes: Medication adherence composite ────────────
+# ── 26. Database Notes: Medication adherence composite ────────────
 # [Features_To_Include_Accepted_Suggestions.Rmd → Database Notes]
 #
 # ┌─────────────────────────────────────────────────────────────────┐
@@ -858,7 +902,7 @@ rx_feats <- rx_days_data |>
   mutate(rx_any_binary = 1L)
 
 
-# ── 26. Final assembly ────────────────────────────────────────────
+# ── 27. Final assembly ────────────────────────────────────────────
 # Left-join all feature tibbles onto the base (randomised participants only).
 # NAs for drug count/binary/streak features are filled with 0 (= no use).
 # NAs for clinical and demographic features are left as NA (genuine missing).
@@ -874,6 +918,7 @@ feature_list <- list(
   pain_main_feats,
   psych_feats,
   qol_feats,
+  housing_stability_feats,
   rand_feats,
   rbs_feats,
   rbs_iv_feats,

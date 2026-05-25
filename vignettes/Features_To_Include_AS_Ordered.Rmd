@@ -916,9 +916,15 @@ Cross-dataset interactions (psychiatric × pain, psychiatric × benzodiazepine) 
 glimpse(qol)
 ```
 
+**Note: CTN-0051 only.** The `qol` dataset contains 657 rows, all from project 51. The single usable feature is `is_homeless` — a Yes/No indicator of current homelessness at baseline. The SF-36/EQ-5D composite scores originally proposed here do not exist in this dataset.
+
 #### Feature proposal
 
-**Baseline quality of life composite** (overall score, or physical/mental subscores if the instrument is the SF-36 or EQ-5D). Lower QOL at baseline is associated with lower treatment motivation and higher dropout (Barr et al. 2002). The mental health subscale in particular captures a broader functional burden than individual diagnoses and is often predictive even after controlling for psychiatric diagnoses.
+**`is_homeless` binary** (0/1 integer). Objective housing status at baseline. Homelessness is among the strongest predictors of OUD treatment dropout and relapse across MOUD modalities — it captures housing instability, lack of safe space to store/take medication, and social environment risk in a single binary flag (Tsemberis et al. 2004; Palepu et al. 2006).
+
+> **⚠️ Cross-dataset note: `is_living_stable` × `is_homeless` discordance (see §24)**
+>
+> `is_living_stable` (demographics, all studies) and `is_homeless` (qol, CTN-0051 only) are related but distinct constructs. An inner join reveals **128 participants coded (Yes, Yes)** — stable living AND homeless simultaneously. All 128 are CTN-0051; this reflects shelter residents who perceive their shelter as "stable." The two variables measure different things: **subjective perceived stability** vs. **objective permanent housing status**. Including both as raw binaries masks this and creates near-collinearity for some patterns. See §24 for the `housing_stability_ord` ordered factor that combines them explicitly.
 
 ---
 
@@ -1111,7 +1117,32 @@ Confirmatory factors: Pain–depression cycle; anxiety-mediated pain catastrophi
 
 ---
 
-# ── 24. Database Notes: Withdrawal trajectory ─────────────────────
+# ── 24. Housing stability (cross-dataset) ─────────────────────────
+
+## demographics × qol
+
+### Dataset Notes
+
+`is_living_stable` (demographics, all studies) encodes subjective perceived housing stability. `is_homeless` (qol, CTN-0051 only) encodes objective homelessness status. These measure related but distinct constructs; the 128 (Yes,Yes) cases are shelter residents — objectively homeless but with stable shelter arrangements.
+
+#### Feature proposal
+
+**`housing_stability_ord`** — 3-level ordered factor, worst → best:
+
+| Level | Cases `(is_living_stable, is_homeless)` | Construct |
+|---|---|---|
+| `unstable_homeless` (worst) | (No,Yes), (NA,Yes) | Confirmed homeless and not shelter-stable |
+| `mid_stability` | (Yes,Yes), (No,No), (No,NA) | Shelter-stable; housed but precarious; unstable + homeless unknown |
+| `stable_housed` (best) | (Yes,No), (NA,No), (Yes,NA) | Clearly stable; not-homeless drives; stable implies housed (non-CTN-0051) |
+| NA | (NA,NA) | Both unknown |
+
+**Rationale**: A shelter resident (Yes,Yes) is meaningfully less precarious than someone with no stable shelter (No/NA, Yes). Housed-but-unstable (No,No) — e.g., abusive household, couch-surfing — is worse than clearly stable (Yes,No) but better than literal homelessness. For non-CTN-0051 participants, `is_homeless` is NA; level assigned purely from `is_living_stable`. The ordinal captures this gradient rather than losing information via two correlated binaries.
+
+Confirmatory factor: Social determinants of health; housing instability as relapse risk
+
+---
+
+# ── 25. Database Notes: Withdrawal trajectory ─────────────────────
 
 ## withdrawal
 
@@ -1125,7 +1156,7 @@ Confirmatory factor: Escalating dependence severity
 
 ---
 
-# ── 25. Database Notes: Medication adherence composite ────────────
+# ── 26. Database Notes: Medication adherence composite ────────────
 
 ## Database Notes
 
@@ -1153,9 +1184,9 @@ Confirmatory factor: Responsibility towards health
 
 ---
 
-# ── 26. Final assembly ────────────────────────────────────────────
+# ── 27. Final assembly ────────────────────────────────────────────
 
-<!-- No source-document content maps here. Technical R implementation of the full left_join sequence and NA-fill logic. See building_analysis.R §25. -->
+<!-- No source-document content maps here. Technical R implementation of the full left_join sequence and NA-fill logic. See building_analysis.R §27. -->
 
 ---
 
@@ -1185,4 +1216,4 @@ The following sections from `Features_To_Include_Accepted_Suggestions.Rmd` have 
 
 > ⚠️ **FLAGGED** — `# visit`: Empty stub in original Rmd (header only, no content). No features. No `building_analysis.R` section.
 
-> ⚠️ **FLAGGED** — `# withdrawal` (stub): Empty stub in original Rmd (header only, no content beneath it). The withdrawal trajectory feature proposal originates in the Database Notes section of the original Rmd and is placed in §23 above via that route. The `# withdrawal` header itself had no content.
+> ⚠️ **FLAGGED** — `# withdrawal` (stub): Empty stub in original Rmd (header only, no content beneath it). The withdrawal trajectory feature proposal originates in the Database Notes section of the original Rmd and is placed in §25 above via that route. The `# withdrawal` header itself had no content.

@@ -592,9 +592,15 @@ glimpse(psychiatric)
 glimpse(qol)
 ```
 
+**Note: CTN-0051 only.** The `qol` dataset contains 657 rows, all from project 51. The single usable feature is `is_homeless` — a Yes/No indicator of current homelessness at baseline. The SF-36/EQ-5D composite scores originally proposed here do not exist in this dataset.
+
 ### Feature proposal
 
-**Baseline quality of life composite** (overall score, or physical/mental subscores if the instrument is the SF-36 or EQ-5D). Lower QOL at baseline is associated with lower treatment motivation and higher dropout (Barr et al. 2002). The mental health subscale in particular captures a broader functional burden than individual diagnoses and is often predictive even after controlling for psychiatric diagnoses.
+**`is_homeless` binary** (0/1 integer). Objective housing status at baseline. Homelessness is among the strongest predictors of OUD treatment dropout and relapse across MOUD modalities — it captures housing instability, lack of safe space to store/take medication, and social environment risk in a single binary flag (Tsemberis et al. 2004; Palepu et al. 2006).
+
+> **⚠️ Cross-dataset note: `is_living_stable` × `is_homeless` discordance (see Database Notes → §24)**
+>
+> `is_living_stable` (demographics, all studies) and `is_homeless` (qol, CTN-0051 only) are related but distinct constructs. An inner join reveals **128 participants coded (Yes, Yes)** — stable living AND homeless simultaneously. All 128 are CTN-0051; this reflects shelter residents who perceive their shelter as "stable." The two variables measure different things: **subjective perceived stability** vs. **objective permanent housing status**. Including both as raw binaries masks this and creates near-collinearity for some patterns. See Database Notes → §24 for the `housing_stability_ord` ordered factor that combines them explicitly.
 
 # randomization
 
@@ -742,6 +748,25 @@ Five interaction features from §13 psychiatric flags crossed with §12 pain fea
 **Anxiety × benzodiazepine**: Signal is pharmacological risk, not self-medication narrative. Whether benzo use is prescribed (anxiety treatment) or misuse, benzodiazepine + opioid co-use synergistically depresses CNS respiratory drive — dramatically elevating overdose risk (FDA black box warning 2016; Park et al. 2015). A participant with anxiety disorder, high baseline benzo days, and subsequent opioid relapse is at substantially elevated fatal overdose risk.
 
 Confirmatory factors: Pain–depression cycle; anxiety-mediated pain catastrophizing; pharmacological overdose risk profile.
+
+---
+
+### Feature proposal: housing stability ordinal (cross-dataset)
+
+**`housing_stability_ord`** — 3-level ordered factor combining `is_living_stable` (demographics, all studies) and `is_homeless` (qol, CTN-0051 only) into a single housing instability severity scale.
+
+| Level | Cases | Construct |
+|---|---|---|
+| `unstable_homeless` (worst) | `(No,Yes)`, `(NA,Yes)` | Confirmed homeless and not shelter-stable |
+| `mid_stability` | `(Yes,Yes)`, `(No,No)`, `(No,NA)` | Shelter-stable residents; housed but precarious; unstable + homeless unknown |
+| `stable_housed` (best) | `(Yes,No)`, `(NA,No)`, `(Yes,NA)` | Clearly stable; not-homeless drives; stable living implies housed (non-CTN-0051) |
+| `NA` | `(NA,NA)` | Both unknown — not imputed |
+
+**Rationale**: Housing instability is a graded construct. A shelter resident (Yes,Yes) is in a qualitatively different and less precarious situation than someone sleeping rough (No,Yes) or on the street with unknown stability (NA,Yes). Similarly, (No,No) — housed but in a subjectively unstable situation (e.g., abusive household, couch-surfing) — is worse than (Yes,No) but better than literal homelessness. The ordinal encoding captures this gradient rather than forcing a binary split or creating spurious independence between the two source variables. For participants outside CTN-0051, `is_homeless` is `NA`; their level is determined entirely by `is_living_stable`.
+
+> **⚠️ (Yes,Yes) note**: All 128 cases are CTN-0051. These are shelter residents — objectively homeless but with a stable shelter environment. This is not a data error. They are placed at Level 2 rather than Level 1 because shelter stability meaningfully reduces the crisis risk that drives the Level 1 construct.
+
+Confirmatory factor: Social determinants of health; housing instability as relapse risk
 
 ---
 
