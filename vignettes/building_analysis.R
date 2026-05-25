@@ -632,6 +632,12 @@ rbs_iv_feats <- rbs_iv |>
 # First 3 digits encode study (270/300/510); site-within-study variance is
 # additional signal beyond the project variable already in analysis_base.
 # step_dummy() at modelling time will expand to 34 indicators.
+#
+# NOTE TO NAT: since the first 3 digits of site_masked directly encode the
+# study (270=CTN-0027, 300=CTN-0030, 510=CTN-0051), site is partially
+# collinear with project. The model will handle it, but be aware you're
+# carrying redundant structure — worth checking VIF on site vs project
+# at modelling time.
 
 site_feats <- site_masked |>
   transmute(who, site = site_masked)
