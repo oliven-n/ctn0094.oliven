@@ -132,6 +132,38 @@ all_drugs_filtered |>
   )
 ```
 
+## Predictor Distributions
+
+```{r fig-withdrawal-severity}
+#| fig-cap: "Pre-induction withdrawal severity by CTN study. Scores are derived from the COWS (CTN-0027/0030) or SOWS (CTN-0051) assessment completed before each participant's first MOUD dose (`withdrawal_pre_post`, what == 'pre'). 0 = None, 1 = Mild, 2 = Moderate, 3 = Severe. Participants with no pre-induction assessment recorded are excluded from this figure (n = `r sum(is.na(analysis_tibble$withdrawal_pre_score))` excluded)."
+#| fig-width: 6.5
+#| fig-height: 4.0
+
+analysis_tibble |>
+  filter(!is.na(withdrawal_pre_score)) |>
+  mutate(
+    severity = factor(
+      withdrawal_pre_score,
+      levels = 0:3,
+      labels = c("None (0)", "Mild (1)", "Moderate (2)", "Severe (3)")
+    ),
+    project = as.character(project)
+  ) |>
+  count(project, severity) |>
+  group_by(project) |>
+  mutate(pct = n / sum(n) * 100) |>
+  ggplot(aes(x = severity, y = pct, fill = project)) +
+  geom_col(position = "dodge", width = 0.7) +
+  scale_fill_brewer(palette = "Set2") +
+  labs(
+    x = "Pre-induction withdrawal severity",
+    y = "Percentage of participants (%)",
+    fill = "Study"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(legend.position = "top")
+```
+
 ## Feature Matrix
 
 ```{r feature-dimensions}
