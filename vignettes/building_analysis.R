@@ -554,15 +554,15 @@ qol_feats <- qol |>
 
 # ── 15. Treatment arm ─────────────────────────────────────────────
 # [Features_To_Include_Accepted_Suggestions.Rmd → randomization]
-
-# INSPECT — confirm the treatment column name
-glimpse(first_rand)
-# TODO: replace <TREATMENT_COL> with the actual column name
+#
+# treatment has 6 levels, all distinct across projects 27/30/51 — it already
+# uniquely identifies both study and arm. No join to everybody needed.
+# Keep as factor; step_dummy() at modelling time handles encoding.
 
 rand_feats <- first_rand |>
   transmute(
-    who
-    # TODO: treatment_arm = <TREATMENT_COL>
+    who,
+    treatment_arm = treatment
   )
 
 

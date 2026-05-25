@@ -936,9 +936,9 @@ Note: make sure to include first randomization only.
 
 #### Feature proposal
 
-**Treatment arm** (what medication the participant was randomized to: methadone, buprenorphine-naloxone, or XR-naltrexone). This is arguably the most important covariate in the entire analysis. The X:BOT trial (CTN-0051; Lee et al. 2018) found that XR-NTX had significantly lower retention than buprenorphine-naloxone, primarily due to the induction barrier; CTN-0028 (POATS; Weiss et al. 2011) found differential effects by prescription opioid vs. heroin subtype. If treatment arm is not included as a feature, the model will confound medication effects with patient characteristics. Include as a categorical variable (one-hot or ordinal depending on model).
+**Treatment arm** (what medication the participant was randomized to: methadone, buprenorphine-naloxone, or XR-naltrexone). This is arguably the most important covariate in the entire analysis. The X:BOT trial (CTN-0051; Lee et al. 2018) found that XR-NTX had significantly lower retention than buprenorphine-naloxone, primarily due to the induction barrier. If treatment arm is not included as a feature, the model will confound medication effects with patient characteristics. Include as a categorical variable (one-hot or ordinal depending on model).
 
-Note: treatment arm is derivable from `randomization` (first randomization only, per the overall rule) joined to `everybody` for the study indicator.
+Note: the `treatment` column in `first_rand` already uniquely identifies the study — the 6 arm labels are distinct across all three projects (27, 30, 51). No join to `everybody` is needed.
 
 ---
 
