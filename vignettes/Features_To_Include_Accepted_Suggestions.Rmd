@@ -770,6 +770,18 @@ Confirmatory factor: Social determinants of health; housing instability as relap
 
 ---
 
+### Feature proposal: heroin denial — all_drugs × rbs (cross-dataset)
+
+**`heroin_rbs_alldr_incons`** (0/1 integer). Flags participants whose `all_drugs` records show ≥1 heroin day in the −28 to 0 window but who denied heroin use in both the heroin and speedball rows of `rbs`. Candidate proxy for minimization of the primary drug of abuse — a known predictor of treatment non-engagement.
+
+Heroin is the best-recorded drug in `all_drugs` (81k events), making false positives from missed records unlikely. Not confounded by MOUD (Buprenorphine/Methadone are distinct drug names). ~5.9% prevalence in the sample (~146 of 2,490 participants).
+
+> **Note on discrepancy vs Appendix A.8**: This section's implementation differs from Appendix A by ~6 participants, likely people who used speedball (heroin+cocaine) and did not separately report heroin use in the heroin rbs row.
+
+Confirmatory factor: Denial/minimization of primary drug of abuse
+
+---
+
 ### Feature proposal: withdrawal trajectory x time
 
 **Slope of withdrawal symptom scores over the -28 to 0 window** (from `withdrawal`). If a participant's withdrawal symptoms are *increasing* in the days before study entry (i.e., escalating dependence), this predicts worse outcomes compared to stable or decreasing withdrawal. A simple linear slope estimated per-person via `lm(score ~ when)` within the window captures this. Increasing withdrawal slope has been associated with higher opioid craving and lower treatment readiness (O'Brien & McLellan 1996).
