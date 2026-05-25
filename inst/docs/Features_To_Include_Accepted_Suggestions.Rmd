@@ -246,6 +246,12 @@ What are the study drugs?
 - In the `all_drugs_filtered` table I am using, Buprenorphine and Suboxone are separate. If someone is randomized to Suboxone but took Buprenorphine prior, count this as having taken THEIR study drug. They are substantially similar.
 - We do not need "Took no study drug before study" because it should be collinear with the above two and probably would break stuff
 
+> **⚠️ WARNING — POTENTIAL LEAKAGE: `took_own_study_drug` / `took_other_study_drug`**
+>
+> The underlying drug-use data is genuinely pre-randomization (days −28 to 0), but the *labeling* of "own" vs. "other" requires knowing each participant's **assigned treatment arm** — which is post-randomization information. A participant assigned to Methadone who used methadone pre-study gets `took_own_study_drug = 1`; the same usage in a Buprenorphine-arm participant becomes `took_other_study_drug = 1`. The feature values therefore implicitly encode treatment arm assignment, not just pre-study behavior. This is structurally similar to why `treatment_arm` was removed as a predictor from the logistic regression.
+>
+> **⚠️ ASK DR. BALISE whether to exclude these features before finalizing any model.**
+
 ### Feature proposal
 
 > **⚠️ DROPPED — `lie_count` / `lie_rate`**: For nearly all participants there were no UDS or UDSAB screenings in the pre-trial window. For those with screenings, self-report was more or less consistent with UDS results, up to drug category grouping name differences. This resulted in `lie_count` and `lie_rate` being `NA` or `0` for the vast majority of participants. These features carry no predictive signal and have been excluded from the analysis tibble.

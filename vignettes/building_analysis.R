@@ -727,6 +727,26 @@ pre_moud_use <- all_drugs_filtered |>
   mutate(drug_group = alldr_drug_group[as.character(what_grouped)]) |>
   distinct(who, drug_group)
 
+# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+# !! WARNING — POTENTIAL LEAKAGE: took_own_study_drug / took_other_study_drug
+# !!
+# !! The drug-use data below is genuinely pre-randomization (days -28 to 0),
+# !! but the *labeling* of "own" vs. "other" requires knowing each participant's
+# !! assigned treatment arm — which is post-randomization information.
+# !!
+# !! A participant assigned to Methadone who used methadone pre-study gets
+# !! took_own_study_drug = 1. The same methadone use in a Buprenorphine-arm
+# !! participant becomes took_other_study_drug = 1. The feature values therefore
+# !! encode treatment arm assignment, not just pre-study behavior.
+# !!
+# !! This is structurally similar to why treatment_arm was removed as a predictor.
+# !! In the LR model these features are kept for now, but their coefficients
+# !! should be interpreted with caution and they may need to be dropped in a
+# !! properly pre-treatment-only feature set.
+# !!
+# !! *** ASK DR. BALISE whether to exclude these before finalizing any model. ***
+# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+#
 # Join each participant's treatment arm (→ arm_group) against their observed
 # pre-study MOUD use (→ drug_group). One row per (who, observed MOUD group);
 # participants with no MOUD records get drug_group = NA after the left_join.
