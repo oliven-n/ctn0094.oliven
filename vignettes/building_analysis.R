@@ -841,42 +841,41 @@ withdrawal_hard_feats <- analysis_base |> select(who)
 # Protective-substitution hypothesis: participants who use SOFT drugs
 # (cannabis, light alcohol) on high-withdrawal days are LESS likely to
 # relapse — substituting non-opioids for opioids when withdrawal peaks.
-# Soft drug composite: Cannabinoids, Alcohol Light Amnt.
-# Caffeine removed — not present in all_drugs_grouped within the window.
-# Alcohol Heavy Amnt excluded (not a "soft" use pattern).
 #
 # Window: per-person [day_zero - 28, day_zero) via all_drugs_windowed.
-# Depends on withdrawal_numeric defined in §22 — run §22 first.
+# DROPPED — same reason as §22. Depends on withdrawal_numeric (also dropped).
+# Kept for reference.
 
 soft_drug_cats <- c("Cannabinoids", "Alcohol Light Amnt")
 
-# Like all_drugs_filtered but WITHOUT the >=10 primary filter (see §22 note).
-soft_drug_days_flag <- all_drugs_windowed |>
-  filter(when >= day_zero - 28, when < day_zero,
-         as.character(what_grouped) %in% soft_drug_cats) |>
-  distinct(who, when) |>
-  mutate(softdrug_use = 1L)
+withdrawal_soft_feats <- analysis_base |> select(who)
 
-withdrawal_soft_feats <- withdrawal_numeric |>
-  left_join(soft_drug_days_flag, by = c("who", "when")) |>
-  mutate(softdrug_use = replace_na(softdrug_use, 0L)) |>
-  group_by(who) |>
-  summarize(
-    withdrawal_softdrug_corr = {
-      nd <- sum(softdrug_use)
-      if (nd == 0L) 0
-      else if (nd == n()) NA_real_
-      else suppressWarnings(cor(withdrawal_score, softdrug_use, use = "complete.obs"))
-    },
-    withdrawal_highrisk_softdrug_rate = {
-      med <- median(withdrawal_score, na.rm = TRUE)
-      high_wdl_days <- withdrawal_score > med
-      if (sum(high_wdl_days, na.rm = TRUE) == 0L) NA_real_
-      else mean(softdrug_use[high_wdl_days], na.rm = TRUE)
-    },
-    .groups = "drop"
-  ) |>
-  transmute(who, withdrawal_softdrug_corr, withdrawal_highrisk_softdrug_rate)
+# # soft_drug_days_flag <- all_drugs_windowed |>
+# #   filter(when >= day_zero - 28, when < day_zero,
+# #          as.character(what_grouped) %in% soft_drug_cats) |>
+# #   distinct(who, when) |>
+# #   mutate(softdrug_use = 1L)
+# #
+# # withdrawal_soft_feats <- withdrawal_numeric |>
+# #   left_join(soft_drug_days_flag, by = c("who", "when")) |>
+# #   mutate(softdrug_use = replace_na(softdrug_use, 0L)) |>
+# #   group_by(who) |>
+# #   summarize(
+# #     withdrawal_softdrug_corr = {
+# #       nd <- sum(softdrug_use)
+# #       if (nd == 0L) 0
+# #       else if (nd == n()) NA_real_
+# #       else suppressWarnings(cor(withdrawal_score, softdrug_use, use = "complete.obs"))
+# #     },
+# #     withdrawal_highrisk_softdrug_rate = {
+# #       med <- median(withdrawal_score, na.rm = TRUE)
+# #       high_wdl_days <- withdrawal_score > med
+# #       if (sum(high_wdl_days, na.rm = TRUE) == 0L) NA_real_
+# #       else mean(softdrug_use[high_wdl_days], na.rm = TRUE)
+# #     },
+# #     .groups = "drop"
+# #   ) |>
+# #   transmute(who, withdrawal_softdrug_corr, withdrawal_highrisk_softdrug_rate)
 
 
 
