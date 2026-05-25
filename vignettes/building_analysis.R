@@ -492,25 +492,47 @@ pain_main_feats <- pain_window |>
 
 # ── 13. Psychiatric features ──────────────────────────────────────
 # [Features_To_Include_Accepted_Suggestions.Rmd → psychiatric]
-
-# INSPECT — run this and check column names
-glimpse(psychiatric)
-# Expected: who + diagnosis/flag columns for depression, anxiety, PTSD,
-# and possibly others. Likely binary (0/1) or factor columns.
-# TODO: replace column names below
+#
+# glimpse(psychiatric): 16 cols — who (int); 6 medical-history diagnosis flags
+# (has_schizophrenia / has_major_dep / has_bipolar / has_anx_pan /
+# has_brain_damage / has_epilepsy): fct Yes/No/NA; 3 ASI self-report items
+# (depression / anxiety / schizophrenia): fct Yes/No/Not answered/Missing/NA;
+# has_opiates_dx + 5 substance-dx flags: fct Yes/No/NA.
+#
+# Simple Yes/No flags: as.integer(x == "Yes") propagates NA naturally.
+# ASI items: "Not answered" and "Missing" → NA via case_when .default.
+# has_opiates_dx excluded from substance_dx_count (near-universal in sample).
 
 psych_feats <- psychiatric |>
   group_by(who) |>
   slice(1) |>
   ungroup() |>
   transmute(
-    who
-    # TODO:
-    # depression_binary    = as.integer(<depression_col>),
-    # anxiety_binary       = as.integer(<anxiety_col>),
-    # ptsd_binary          = as.integer(<ptsd_col>),
-    # psych_comorbidity_n  = depression_binary + anxiety_binary + ptsd_binary
-    #                        # add more diagnosis columns as needed
+    who,
+    # Medical history diagnosis flags (Yes/No/NA)
+    has_schizophrenia   = as.integer(has_schizophrenia   == "Yes"),
+    has_major_dep       = as.integer(has_major_dep       == "Yes"),
+    has_bipolar         = as.integer(has_bipolar         == "Yes"),
+    has_anx_pan         = as.integer(has_anx_pan         == "Yes"),
+    has_brain_damage    = as.integer(has_brain_damage    == "Yes"),
+    has_epilepsy        = as.integer(has_epilepsy        == "Yes"),
+    # DSM diagnosis flags (Yes/No/NA)
+    has_opiates_dx      = as.integer(has_opiates_dx      == "Yes"),
+    has_alcol_dx        = as.integer(has_alcol_dx        == "Yes"),
+    has_amphetamines_dx = as.integer(has_amphetamines_dx == "Yes"),
+    has_cannabis_dx     = as.integer(has_cannabis_dx     == "Yes"),
+    has_cocaine_dx      = as.integer(has_cocaine_dx      == "Yes"),
+    has_sedatives_dx    = as.integer(has_sedatives_dx    == "Yes"),
+    # ASI self-report (Yes/No/Not answered/Missing → 1/0/NA/NA)
+    depression_binary    = case_when(depression    == "Yes" ~ 1L, depression    == "No" ~ 0L, .default = NA_integer_),
+    anxiety_binary       = case_when(anxiety       == "Yes" ~ 1L, anxiety       == "No" ~ 0L, .default = NA_integer_),
+    schizophrenia_binary = case_when(schizophrenia == "Yes" ~ 1L, schizophrenia == "No" ~ 0L, .default = NA_integer_),
+    # Derived: burden counts (NA-safe; NA inputs produce NA in sum, which is fine)
+    psych_comorbidity_count = has_schizophrenia + has_major_dep + has_bipolar +
+                              has_anx_pan + has_brain_damage + has_epilepsy,
+    substance_dx_count      = has_alcol_dx + has_amphetamines_dx +
+                              has_cannabis_dx + has_cocaine_dx + has_sedatives_dx,
+    dep_or_anx_binary       = as.integer(depression_binary == 1 | anxiety_binary == 1)
   )
 
 
@@ -756,7 +778,30 @@ pain_soft_feats <- pain_soft_daily |>
   # },
 
 
-# ── 23. Database Notes: Withdrawal trajectory ─────────────────────
+
+# ── 23. Database Notes: Psychiatric × pain and psychiatric × drug ──
+# [Features_To_Include_Accepted_Suggestions.Rmd → Database Notes]
+#
+# Interactions between psychiatric comorbidities (§13) and:
+#   - pain main effects (§12): depression/anxiety amplify pain-triggered relapse
+#   - benzodiazepine use (§5): anxiety + benzo co-use = elevated CNS/OD risk
+# NA in benzodiazepine_days means no observed use → imputed 0 before multiplying.
+
+psych_cross_feats <- analysis_base |>
+  left_join(select(psych_feats,     who, has_major_dep, has_anx_pan), by = "who") |>
+  left_join(select(pain_main_feats, who, pain_mean, pain_max),        by = "who") |>
+  left_join(select(drug_feats,      who, benzodiazepine_days),        by = "who") |>
+  transmute(
+    who,
+    has_major_dep_x_pain_mean         = has_major_dep * pain_mean,
+    has_major_dep_x_pain_max          = has_major_dep * pain_max,
+    has_anx_pan_x_pain_mean           = has_anx_pan   * pain_mean,
+    has_anx_pan_x_pain_max            = has_anx_pan   * pain_max,
+    has_anx_pan_x_benzodiazepine_days = has_anx_pan   * replace_na(benzodiazepine_days, 0L)
+  )
+
+
+# ── 24. Database Notes: Withdrawal trajectory ─────────────────────
 # [Features_To_Include_Accepted_Suggestions.Rmd → Database Notes]
 #
 # Slope of withdrawal symptom scores (COWS/SOWS) over days -28 to -1.
@@ -780,7 +825,7 @@ withdrawal_traj_feats <- withdrawal |>
   # },
 
 
-# ── 24. Database Notes: Medication adherence composite ────────────
+# ── 25. Database Notes: Medication adherence composite ────────────
 # [Features_To_Include_Accepted_Suggestions.Rmd → Database Notes]
 #
 # ┌─────────────────────────────────────────────────────────────────┐
@@ -819,7 +864,7 @@ rx_feats <- rx_days_data |>
   mutate(rx_any_binary = 1L)
 
 
-# ── 25. Final assembly ────────────────────────────────────────────
+# ── 26. Final assembly ────────────────────────────────────────────
 # Left-join all feature tibbles onto the base (randomised participants only).
 # NAs for drug count/binary/streak features are filled with 0 (= no use).
 # NAs for clinical and demographic features are left as NA (genuine missing).
@@ -843,6 +888,7 @@ feature_list <- list(
   study_drug_feats,
   pain_hard_feats,
   pain_soft_feats,
+  psych_cross_feats,
   withdrawal_traj_feats,
   rx_feats
 )
