@@ -702,6 +702,28 @@ glimpse(withdrawal_pre_post)
 
 > <div style="color: #ffffff; background: #c0392b; padding: 14px; border: 4px solid #922b21; font-size: 1.5em; font-weight: bold; margin-top: 12px;">🚨 CRITICAL — NOTE TO NAT: WINDOW ANCHOR MAY BE WRONG 🚨<br><br>Every longitudinal feature in this analysis filters <code>when &gt;= -28 &amp; when &lt; 0</code>, anchored to <strong>randomization (day 0)</strong>. But if induction happens days after randomization, data in the [0, induction_day) range is valid pre-treatment baseline that we are currently discarding entirely.<br><br>If the window should instead be anchored to <strong>induction date</strong>, every single drug feature (§5), pain feature, rbs_iv feature, and every other longitudinal section is filtered incorrectly. This is the highest-stakes unresolved methodological question in the analysis.<br><br>We do NOT have an induction date column. It may be inferable from <code>withdrawal_pre_post</code> (the minimum positive <code>when</code> where <code>what == "pre"</code> per participant), but this is unverified. Confirm with Dr. Balise before modelling.</div>
 
+#### What `screening_date` tells us about the window
+
+The `screening_date` dataset contains a `day_zero` column described as "best guess at the end of TLFB" — i.e., the day (relative to randomization) when each participant's Timeline Followback assessment was actually collected. This is the per-person anchor for the `all_drugs` window, and it is **not always 0**.
+
+```{r screening-date-overview}
+glimpse(screening_date)
+```
+
+```{r day-zero-distribution}
+hist(
+  screening_date$day_zero,
+  breaks = 50,
+  main   = "Distribution of day_zero (TLFB anchor relative to randomization)",
+  xlab   = "day_zero (days)",
+  ylab   = "Participants"
+)
+```
+
+The distribution spikes sharply at 0 or −1, meaning the majority of participants had their TLFB collected at or immediately before randomization — so our fixed `when >= -28 & when < 0` filter is approximately correct for most people. However, there is a meaningful left tail reaching −28 and a right tail out to +20. Participants far from zero have their entire TLFB window shifted: participant 14 (`day_zero = 27`) has essentially none of their drug records captured by our current filter.
+
+**Bottom line:** the error is real but probably acceptable for the majority of the sample. Whether to implement per-person `day_zero`-anchored windows is a methodological call for Dr. Balise — do not change the filter without that conversation.
+
 ### Feature proposal
 
 **Pre-induction withdrawal severity score** (baseline COWS or SOWS score before first dose). Baseline withdrawal severity is a predictor of buprenorphine induction success and XR-NTX induction completion. Patients with higher pre-induction COWS are more likely to fail induction onto XR-NTX (Lee et al. 2018; Sigmon et al. 2012), creating a selection effect that is critical to model. Include as a continuous score.

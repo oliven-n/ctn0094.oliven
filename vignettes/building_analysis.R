@@ -685,64 +685,75 @@ site_feats <- site_masked |>
 #     for what == "pre" per participant) but this is unverified.
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 #
-# TODO: implement after Dr. Balise confirms window anchor and dataset usability.
+# TODO (window anchor): confirm with Dr. Balise whether pre-induction rows
+# (what == "pre", when >= 0) are valid baseline features. See top-of-file
+# warning and .Rmd §19.
+#
+# For now: pre and post scores are date-agnostic — they describe induction
+# severity regardless of when induction occurred. Safe to include.
+# withdrawal is an ordered factor (0=none, 1=mild, 2=moderate, 3=severe);
+# coerce to integer for modelling. Multiple pre/post rows per person are
+# rare; take the last pre (closest to induction) and first post.
 
-# withdrawal_pp_feats <- withdrawal_pre_post |>
-#   filter(what == "pre") |>
-#   group_by(who) |>
-#   summarize(
-#     withdrawal_pre  = as.integer(as.character(withdrawal[which.min(when)])),
-#     .groups = "drop"
-#   )
+withdrawal_pp_feats <- withdrawal_pre_post |>
+  mutate(score = as.integer(as.character(withdrawal))) |>
+  group_by(who, what) |>
+  summarize(score = first(score), .groups = "drop") |>
+  pivot_wider(names_from = what, values_from = score,
+              names_prefix = "withdrawal_") |>
+  transmute(who, withdrawal_pre, withdrawal_post)
 
 
 # ── 20. Database Notes: Took THEIR / DIFFERENT study drug ─────────
 # [Features_To_Include_Accepted_Suggestions.Rmd → Database Notes]
 #
-# For each participant, check whether they used their assigned study
-# drug (or its equivalent) in the pre-study window.
-# Buprenorphine ≡ Suboxone for this purpose.
-# XR-Naltrexone is not in all_drugs (not a drug of abuse) → always 0.
+# treatment labels (from randomization/first_rand) use different wording
+# than what_grouped values in all_drugs. Explicit mapping below.
+# NR-NTX is not in all_drugs (not a drug of abuse) → took_own = 0 always.
+# Buprenorphine ≡ Suboxone: both map to "BUP" group.
 
-# INSPECT — confirm the treatment column name in first_rand
-# glimpse(first_rand)  # already called above in section 15
+# treatment label → study drug group
+study_drug_map <- c(
+  "Inpatient BUP"        = "BUP",
+  "Inpatient NR-NTX"    = "NTX",
+  "Methadone"            = "MET",
+  "Outpatient BUP"       = "BUP",
+  "Outpatient BUP + EMM" = "BUP",
+  "Outpatient BUP + SMM" = "BUP"
+)
 
-# Pre-study MOUD use (any source)
+# all_drugs what_grouped → study drug group
+alldr_drug_group <- c(
+  "Buprenorphine" = "BUP",
+  "Suboxone"      = "BUP",
+  "Methadone"     = "MET"
+)
+
+# One row per (who, drug_group) for each MOUD drug observed in the window.
+# drug_group collapses Buprenorphine + Suboxone → "BUP", Methadone → "MET".
+# Participants with no MOUD records in the window are absent (handled by left_join below).
 pre_moud_use <- all_drugs_filtered |>
-  filter(as.character(what_grouped) %in% c("Buprenorphine", "Suboxone", "Methadone")) |>
-  distinct(who, what_grouped)
+  filter(as.character(what_grouped) %in% names(alldr_drug_group)) |>
+  mutate(drug_group = alldr_drug_group[as.character(what_grouped)]) |>
+  distinct(who, drug_group)
 
-# TODO: replace <TREATMENT_COL> with the actual column name from randomization,
-# then swap the placeholder below for the full implementation sketch (commented out).
-study_drug_feats <- first_rand |>
-  transmute(who)
-  # Full implementation — uncomment after resolving treatment column name:
-  #
-  # study_drug_feats <- first_rand |>
-  #   select(who, treatment = <TREATMENT_COL>) |>
-  #   left_join(pre_moud_use, by = "who") |>
-  #   mutate(
-  #     took_their_study_drug = case_when(
-  #       grepl("buprenorphine|suboxone|naloxone", treatment, ignore.case = TRUE) &
-  #         as.character(what_grouped) %in% c("Buprenorphine", "Suboxone") ~ 1L,
-  #       grepl("methadone", treatment, ignore.case = TRUE) &
-  #         as.character(what_grouped) == "Methadone" ~ 1L,
-  #       TRUE ~ 0L
-  #     ),
-  #     took_different_study_drug = case_when(
-  #       grepl("buprenorphine|suboxone|naloxone", treatment, ignore.case = TRUE) &
-  #         as.character(what_grouped) == "Methadone" ~ 1L,
-  #       grepl("methadone", treatment, ignore.case = TRUE) &
-  #         as.character(what_grouped) %in% c("Buprenorphine", "Suboxone") ~ 1L,
-  #       TRUE ~ 0L
-  #     )
-  #   ) |>
-  #   group_by(who) |>
-  #   summarize(
-  #     took_their_study_drug     = max(took_their_study_drug,     na.rm = TRUE),
-  #     took_different_study_drug = max(took_different_study_drug, na.rm = TRUE),
-  #     .groups = "drop"
-  #   )
+# Join each participant's treatment arm (→ arm_group) against their observed
+# pre-study MOUD use (→ drug_group). One row per (who, observed MOUD group);
+# participants with no MOUD records get drug_group = NA after the left_join.
+# Summarize to one row per participant: did they use their own arm's drug?
+# Did they use a different arm's drug? NTX arm → took_own always 0 (not in all_drugs).
+study_drug_feats <- analysis_base |>
+  select(who) |>
+  left_join(select(first_rand, who, treatment), by = "who") |>
+  mutate(arm_group = study_drug_map[as.character(treatment)]) |>
+  left_join(pre_moud_use, by = "who") |>
+  group_by(who, arm_group) |>
+  summarize(
+    took_own_study_drug   = as.integer(any(drug_group == arm_group,                      na.rm = TRUE)),
+    took_other_study_drug = as.integer(any(!is.na(drug_group) & drug_group != arm_group, na.rm = TRUE)),
+    .groups = "drop"
+  ) |>
+  transmute(who, took_own_study_drug, took_other_study_drug)
 
 
 # ── 21. Database Notes: Pain × hard drug interaction ─────────────
