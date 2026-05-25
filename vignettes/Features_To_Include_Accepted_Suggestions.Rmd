@@ -644,7 +644,21 @@ glimpse(rbs_iv)
 
 ### Feature proposal
 
-**Recent IV drug use binary**: Whether the participant injected drugs in the period captured by the Risk Behavior Survey. IV drug use at intake is associated with more severe OUD, greater withdrawal intensity, higher overdose risk, and substantially worse treatment retention in buprenorphine and XR-NTX arms (Roux et al. 2014; Gossop et al. 2002). This is distinct from the ASI lifetime IV use indicator — the recent/current measure is more clinically proximal.
+All 9 columns included as features. IV drug use at intake is associated with more severe OUD, greater withdrawal intensity, higher overdose risk, and substantially worse treatment retention in buprenorphine and XR-NTX arms (Roux et al. 2014; Gossop et al. 2002). This is distinct from the ASI lifetime IV use indicator — the recent/current measure is more clinically proximal.
+
+| Feature | Source column | Notes |
+|---|---|---|
+| `iv_days_total` | `days` | Max days of IV use across all drugs; definitionally = max of per-drug columns — expect high correlation |
+| `iv_events` | `max` | Total injection events (not days) |
+| `iv_amount_dominant` | `amount` | Total exposure for most-used IV drug |
+| `iv_shared_needles` | `shared` | Binary; needle sharing = HIV risk + social instability proxy |
+| `cocaine_inject_days` | `cocaine_inject_days` | NA → 0 (did not inject cocaine) |
+| `heroin_inject_days` | `heroin_inject_days` | NA → 0; will correlate with speedball |
+| `speedball_inject_days` | `speedball_inject_days` | NA → 0; contains heroin, expect heroin correlation |
+| `opioid_inject_days` | `opioid_inject_days` | NA → 0 |
+| `speed_inject_days` | `speed_inject_days` | NA → 0 |
+
+`iv_days_total`, `iv_events`, `iv_amount_dominant`: NA left as-is (genuinely missing aggregate). `iv_shared_needles`: NA left as-is (missing response).
 
 # screening_date
 

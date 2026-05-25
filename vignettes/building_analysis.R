@@ -592,19 +592,36 @@ rand_feats <- first_rand |>
 
 # ── 17. RBS_IV: recent IV drug use ───────────────────────────────
 # [Features_To_Include_Accepted_Suggestions.Rmd → rbs_iv]
-
-# INSPECT — run this and check column names
-glimpse(rbs_iv)
-# Expected: who + binary or flag column for recent IV drug use
-# TODO: replace column names below
+#
+# All 9 columns included. Correlation notes:
+#   - iv_days_total is definitionally max(per-drug inject_days) — will be
+#     flagged by correlation filter; include anyway for completeness.
+#   - heroin/speedball inject_days will correlate (speedball contains heroin).
+#   - iv_shared_needles is the most distinct signal (pure behavioral risk).
+#   - iv_events / iv_amount_dominant are aggregate summaries; may be
+#     redundant once per-drug columns exist but kept for now.
+#
+# NA handling:
+#   - *_inject_days: NA = did not inject that drug → replace with 0.
+#   - iv_days_total, iv_events, iv_amount_dominant: NA = genuinely missing
+#     aggregate (e.g. who=5 has NA for all) → leave as NA.
+#   - iv_shared_needles: NA = missing response → leave as NA.
 
 rbs_iv_feats <- rbs_iv |>
   group_by(who) |>
   slice(1) |>
   ungroup() |>
   transmute(
-    who
-    # TODO: iv_drug_use_recent_binary = as.integer(<iv_col> == "Yes")
+    who,
+    iv_days_total         = days,
+    iv_events             = max,
+    iv_amount_dominant    = amount,
+    iv_shared_needles     = as.integer(shared == "Yes"),
+    cocaine_inject_days   = replace_na(cocaine_inject_days,   0L),
+    heroin_inject_days    = replace_na(heroin_inject_days,    0L),
+    speedball_inject_days = replace_na(speedball_inject_days, 0L),
+    opioid_inject_days    = replace_na(opioid_inject_days,    0L),
+    speed_inject_days     = replace_na(speed_inject_days,     0L)
   )
 
 
