@@ -627,9 +627,14 @@ rbs_iv_feats <- rbs_iv |>
 
 # ── 18. Study site ────────────────────────────────────────────────
 # [Features_To_Include_Accepted_Suggestions.Rmd → site_masked]
+#
+# 35-level factor (19 CTN-0027, 9 CTN-0030, 7 CTN-0051), ~100 subjects each.
+# First 3 digits encode study (270/300/510); site-within-study variance is
+# additional signal beyond the project variable already in analysis_base.
+# step_dummy() at modelling time will expand to 34 indicators.
 
 site_feats <- site_masked |>
-  transmute(who, site = site_masked)  # TODO: confirm column name is site_masked
+  transmute(who, site = site_masked)
 
 
 # ── 19. Withdrawal pre/post ───────────────────────────────────────
