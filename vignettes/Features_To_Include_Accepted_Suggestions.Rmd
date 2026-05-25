@@ -542,19 +542,47 @@ glimpse(psychiatric)
 
 ### Feature proposal
 
-**Depression diagnosis / score**: Whether the participant meets criteria for a depressive disorder (or a continuous depression symptom score if available). Depression is the single most replicated psychiatric predictor of OUD relapse (Nunes & Levin 2004; Kidorf et al. 2004). Co-occurring depression cuts abstinence rates roughly in half in MOUD trials.
+**Medical history diagnosis flags** — 6 binary (0/1) features from the clinical interview. NA = not assessed.
+
+| Feature | Condition | Notes |
+|---|---|---|
+| `has_schizophrenia` | Schizophrenia | |
+| `has_major_dep` | Major depression | Strongest psychiatric predictor of OUD relapse (Nunes & Levin 2004); co-occurring depression roughly halves abstinence rates in MOUD trials |
+| `has_bipolar` | Bipolar disorder | |
+| `has_anx_pan` | Anxiety / panic disorder | Predicts worse XR-NTX outcomes (Lee et al. 2018) |
+| `has_brain_damage` | Brain damage | |
+| `has_epilepsy` | Epilepsy | |
 
 ### Feature proposal
 
-**Anxiety disorder binary**: Whether the participant has a current anxiety disorder (generalized anxiety, panic, social anxiety). Anxiety comorbidity predicts worse outcomes particularly for XR-NTX, where early discontinuation due to side effects is more common in anxious patients (Lee et al. 2018).
+**DSM substance use disorder diagnoses** — 6 binary features. `has_opiates_dx` near-universal in this sample (near-zero variance); included for completeness.
+
+| Feature | Condition |
+|---|---|
+| `has_opiates_dx` | Opioid use disorder (DSM-IV abuse/dependence or DSM-5 OUD) |
+| `has_alcol_dx` | Alcohol use disorder |
+| `has_amphetamines_dx` | Amphetamine-type SUD |
+| `has_cannabis_dx` | Cannabis use disorder |
+| `has_cocaine_dx` | Cocaine use disorder |
+| `has_sedatives_dx` | Sedative/hypnotic/anxiolytic SUD |
 
 ### Feature proposal
 
-**PTSD binary**: Post-traumatic stress disorder diagnosis. PTSD is uniquely predictive of opioid relapse beyond general anxiety (Yule et al. 2018; Back et al. 2014), especially among women, and the mechanism (hyperarousal → craving) is well-established. Given the high trauma burden in OUD populations, this is a high-confidence inclusion.
+**ASI self-report psychiatric items** — 3 binary features. Distinct from medical history flags: patient-reported symptoms, not clinical diagnoses. "Not answered" and "Missing" both encoded as NA.
+
+| Feature | ASI Item |
+|---|---|
+| `depression_binary` | P4: Serious depression / sadness / hopelessness / difficulty functioning |
+| `anxiety_binary` | P5: Serious anxiety / tension / inability to relax |
+| `schizophrenia_binary` | P6: Hallucinations (saw or heard things others did not) |
 
 ### Feature proposal
 
-**Total psychiatric comorbidity count**: Number of distinct psychiatric diagnoses at baseline (integer). Higher comorbidity load predicts worse treatment outcomes across all three study medications and serves as a useful summary variable when individual diagnoses are sparse (Watkins et al. 2011).
+**Derived psychiatric burden features:**
+
+- **`psych_comorbidity_count`**: sum of the 6 medical history binary flags. Total psychiatric burden as a scalar; higher load predicts worse OUD treatment outcomes across all three study medications (Watkins et al. 2011).
+- **`substance_dx_count`**: sum of the 5 non-opioid SUD diagnoses. Captures polysubstance disorder burden independent of the primary OUD diagnosis.
+- **`dep_or_anx_binary`**: 1 if `depression_binary == 1` OR `anxiety_binary == 1`. The internalizing comorbidity cluster is the most replicated psychiatric predictor of OUD relapse; co-occurring depression roughly halves abstinence rates in MOUD trials (Nunes & Levin 2004).
 
 # qol
 
@@ -694,6 +722,26 @@ The hypothesis predicts a **negative** `pain_softdrug_corr` (or near zero), and 
 **Soft drug composite definition**: Cannabinoids + Alcohol Light Amnt + Caffeine (using post-`drug_map` category names). Exclude Alcohol Heavy Amnt from the soft drug composite since it crosses into substance-of-concern territory. Nicotine could be included or kept separate.
 
 Confirmatory factor: Self-medication tendency
+
+### Feature proposal: psychiatric × pain and psychiatric × drug interactions
+
+Five interaction features from §13 psychiatric flags crossed with §12 pain features and §5 drug features:
+
+| Feature | Formula | Construct |
+|---|---|---|
+| `has_major_dep_x_pain_mean` | `has_major_dep × pain_mean` | Depression × chronic pain burden |
+| `has_major_dep_x_pain_max` | `has_major_dep × pain_max` | Depression × acute severe pain episodes |
+| `has_anx_pan_x_pain_mean` | `has_anx_pan × pain_mean` | Anxiety × chronic pain (catastrophizing) |
+| `has_anx_pan_x_pain_max` | `has_anx_pan × pain_max` | Anxiety × acute severe pain |
+| `has_anx_pan_x_benzodiazepine_days` | `has_anx_pan × benzodiazepine_days` | Anxiety + benzo co-use = elevated CNS overdose risk |
+
+**Depression × pain**: The depression–chronic pain cycle is among the best-documented self-medication pathways in OUD. Depression lowers pain threshold and depletes dopaminergic reward circuitry, while chronic pain exacerbates depressive symptoms — a bidirectional reinforcing cycle (Sheng et al. 2017). In OUD populations this predicts opioid escalation and treatment dropout (Rhodin et al. 2006; Sullivan et al. 2006). `pain_mean` captures chronic burden; `pain_max` captures acute severe episodes as distinct relapse triggers.
+
+**Anxiety × pain**: Anxiety amplifies pain catastrophizing — independently associated with opioid misuse and worse OUD outcomes. `pain_max` captures the acute worst-case pain event that can trigger hyperarousal-mediated craving.
+
+**Anxiety × benzodiazepine**: Signal is pharmacological risk, not self-medication narrative. Whether benzo use is prescribed (anxiety treatment) or misuse, benzodiazepine + opioid co-use synergistically depresses CNS respiratory drive — dramatically elevating overdose risk (FDA black box warning 2016; Park et al. 2015). A participant with anxiety disorder, high baseline benzo days, and subsequent opioid relapse is at substantially elevated fatal overdose risk.
+
+Confirmatory factors: Pain–depression cycle; anxiety-mediated pain catastrophizing; pharmacological overdose risk profile.
 
 ---
 
