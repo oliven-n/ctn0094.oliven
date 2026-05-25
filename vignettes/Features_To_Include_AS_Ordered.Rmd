@@ -952,6 +952,8 @@ Note: the `treatment` column in `first_rand` already uniquely identifies the stu
 glimpse(rbs)
 ```
 
+**Note: rbs dropped from main feature set.** The dataset contains only 5 drug categories (cocaine, heroin, speedball, opioid, speed) with bucketed day counts (0/4/30) — a coarser, same-source-type duplicate of the −28 to 0 drug event data already captured at higher resolution in `drug_feats`. The only unique signal extracted is the heroin denial flag (`heroin_rbs_alldr_incons`), computed as a cross-dataset feature in §23.
+
 #### Feature proposal
 
 **Social network drug use**: The number or proportion of people in the participant's social network who use drugs (if this item is in the RBS). Social network drug use is one of the strongest documented predictors of OUD relapse — having drug-using peers roughly doubles relapse odds at 12 months (Havassy et al. 1991; Jason et al. 2010). This captures environmental exposure that no within-person drug history variable can capture.
@@ -959,6 +961,8 @@ glimpse(rbs)
 #### Feature proposal
 
 **Number of recent sexual partners**: From the RBS. High partner count is a marker of HIV risk behavior and a proxy for social instability and sensation-seeking, both of which predict OUD treatment dropout (Nunes et al. 2010). Include as a continuous or binned count.
+
+> <h2 style="color: #c0392b; background: #fdecea; padding: 10px; border-left: 6px solid #c0392b; font-size: 1.4em;">⚠️ QUESTION FOR DR. BALISE: Why are social network drug use and number of recent sexual partners missing from RBS? These are standard RBS items and would be valuable features. See Email.</h2>
 
 ---
 

@@ -568,24 +568,26 @@ rand_feats <- first_rand |>
 
 # ── 16. RBS features ─────────────────────────────────────────────
 # [Features_To_Include_Accepted_Suggestions.Rmd → rbs]
+#
+# DROPPED — rbs contains only 5 drug-use categories (cocaine, heroin,
+# speedball, opioid, speed) with bucketed day counts (0/4/30) over a
+# 30-day lookback. This is a coarser, same-source-type duplicate of the
+# -28 to 0 window already captured at higher resolution in drug_feats
+# (§5, 53 drug types, exact event counts from tlfb).
+#
+# The only unique signal extracted from rbs is the heroin denial flag,
+# which is computed as a cross-dataset feature in §23.
+#
+# The social network drug use and sexual partner count features originally
+# proposed for rbs are NOT present in this dataset — see Rmd §16 note.
 
-# INSPECT — run this and check column names
-glimpse(rbs)
-# Expected: who + columns for social network drug use
-# (e.g. proportion/count of network members who use drugs)
-# and number of recent sexual partners
-# TODO: replace column names below
-
-rbs_feats <- rbs |>
-  group_by(who) |>
-  slice(1) |>
-  ungroup() |>
-  transmute(
-    who
-    # TODO:
-    # social_network_drug_use = <network_drug_col>,
-    # n_sexual_partners       = <partners_col>
-  )
+# rbs_feats <- rbs |>       # DROPPED — see note above
+#   group_by(who) |>
+#   slice(1) |>
+#   ungroup() |>
+#   transmute(
+#     who
+#   )
 
 
 # ── 17. RBS_IV: recent IV drug use ───────────────────────────────
@@ -955,7 +957,7 @@ feature_list <- list(
   qol_feats,
   housing_stability_feats,
   rand_feats,
-  rbs_feats,
+  # rbs_feats,  # DROPPED — see §16 note; heroin denial captured separately below
   heroin_rbs_feats,
   rbs_iv_feats,
   site_feats,
