@@ -1214,3 +1214,54 @@ rbs_denial_feats <- rbs_denial_detail |>
 cat("\n── Table A5: Per-who binary denial feature summary ──\n")
 glimpse(rbs_denial_feats)
 summary(rbs_denial_feats |> select(-who))
+
+# ── A.8 Promotion candidate: heroin denial flag ───────────────────────────────
+#
+# After inspecting Table A4, heroin is the only category clean enough to
+# consider promoting to the main feature set. Reasoning by category:
+#
+# SPEEDBALL (18.2% denial) — discard. Almost certainly a measurement artifact.
+#   Speedball is inferred as heroin+cocaine co-occurrence on the SAME day. Someone
+#   who used heroin on Monday and cocaine on Wednesday would never trigger it in
+#   all_drugs, but could still report "30 speedball days" in rbs. The 18.2% is
+#   mostly this mismatch, not real denial.
+#
+# OPIOID (6.9% denial, 10.5% claimed-unobserved) — discard. Both directions are
+#   dominated by MOUD. Patients on prescribed Buprenorphine/Methadone show up as
+#   28 "opioid" days in all_drugs, but many won't report their medication as
+#   "opioid use" in rbs. And participants with illicit opioid use not captured
+#   in all_drugs inflate claimed-unobserved. Irredeemably noisy.
+#
+# COCAINE (3.0%), SPEED (1.6%) — low prevalence limits statistical power.
+#   Mechanistically plausible but probably not worth including given the signal
+#   is thin and both suffer from the same mapping uncertainty issues as the others.
+#
+# HEROIN (5.9% denial) — cleanest signal by a wide margin:
+#   - Heroin is the best-recorded drug in all_drugs (81k events, most of any drug).
+#     False positives from missed records are unlikely.
+#   - Not confounded by MOUD (Buprenorphine and Methadone are separate categories).
+#   - Not an inference artifact (direct name match, no co-occurrence logic).
+#   - ~6% of participants denied heroin use that records clearly show — a real
+#     discrepancy. This is a candidate proxy for minimization of the primary
+#     drug of abuse, a known predictor of treatment non-engagement.
+#
+# Feature: heroin_denied (0/1)
+#   1 = participant reported 0 heroin days in rbs but all_drugs shows ≥1 heroin
+#       event in the -28 to 0 window.
+#   0 = no discrepancy (either consistent, or no heroin records at all).
+#
+# To promote to the main feature set: add heroin_denial_feats to feature_list
+# in §27 and remove the rbs_feats placeholder.
+
+heroin_denial_feats <- rbs_denial_detail |>
+  filter(rbs_what == "heroin") |>
+  transmute(
+    who,
+    heroin_denied = denied_but_obs
+  )
+
+cat("\n── Table A6: Heroin denial flag prevalence ──\n")
+heroin_denial_feats |>
+  count(heroin_denied) |>
+  mutate(pct = round(n / sum(n), 3)) |>
+  print()
