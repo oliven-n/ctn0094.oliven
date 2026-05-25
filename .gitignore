@@ -162,3 +162,6 @@ inst/doc/
 inst/docs/
 .positai
 analysis_files
+
+# Branch backup archives (not source files)
+*.zip
