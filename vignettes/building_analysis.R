@@ -773,7 +773,42 @@ pain_soft_feats <- pain_soft_daily |>
 
 
 
-# ── 23. Database Notes: Psychiatric × pain and psychiatric × drug ──
+# ── 23. Database Notes: Heroin denial — all_drugs × rbs ───────────
+# [Features_To_Include_Accepted_Suggestions.Rmd → Database Notes]
+#
+# Cross-dataset feature: compares all_drugs heroin records (§5) against
+# rbs self-report (§16) to flag participants who deny heroin use despite
+# records showing it in the pre-study window.
+#
+# Quicker compute of the heroin_denied flag from Appendix A.8.
+# ~6-person discrepancy vs the appendix version, likely people who used
+# speedball (which contains heroin) and didn't separately report heroin
+# use in the heroin rbs row.
+#
+# A participant "admitted" heroin if they said Yes to heroin OR speedball
+# in rbs (speedball = heroin+cocaine; admitting it implies heroin use).
+# heroin_rbs_alldr_incons = 1: heroin_days > 0 in records but rbs denied it.
+
+rbs_heroin_admitted <- rbs |>
+  filter(as.character(what) %in% c("heroin", "speedball")) |>
+  group_by(who) |>
+  summarize(admitted_heroin_rbs = any(did_use == "Yes"), .groups = "drop")
+
+heroin_denial_fast_compute <- analysis_base |>
+  select(who) |>
+  left_join(select(drug_feats, who, heroin_days), by = "who") |>
+  left_join(rbs_heroin_admitted, by = "who") |>
+  mutate(
+    heroin_days             = replace_na(heroin_days, 0L),
+    admitted_heroin_rbs     = replace_na(admitted_heroin_rbs, FALSE),
+    heroin_rbs_alldr_incons = as.integer(heroin_days > 0 & !admitted_heroin_rbs)
+  )
+
+heroin_rbs_feats <- heroin_denial_fast_compute |>
+  transmute(who, heroin_rbs_alldr_incons)
+
+
+# ── 24. Database Notes: Psychiatric × pain and psychiatric × drug ──
 # [Features_To_Include_Accepted_Suggestions.Rmd → Database Notes]
 #
 # Interactions between psychiatric comorbidities (§13) and:
@@ -795,7 +830,7 @@ psych_cross_feats <- analysis_base |>
   )
 
 
-# ── 24. Housing stability (cross-dataset) ─────────────────────────
+# ── 25. Database Notes: Housing stability (cross-dataset) ──────────
 # [Features_To_Include_Accepted_Suggestions.Rmd → Database Notes]
 #
 # Combines is_living_stable (demographics, all studies, subjective perceived
@@ -839,7 +874,7 @@ housing_stability_feats <- analysis_base |>
   )
 
 
-# ── 25. Database Notes: Withdrawal trajectory ─────────────────────
+# ── 26. Database Notes: Withdrawal trajectory ─────────────────────
 # [Features_To_Include_Accepted_Suggestions.Rmd → Database Notes]
 #
 # Slope of withdrawal symptom scores (COWS/SOWS) over days -28 to -1.
@@ -863,7 +898,7 @@ withdrawal_traj_feats <- withdrawal |>
   # },
 
 
-# ── 26. Database Notes: Medication adherence composite ────────────
+# ── 27. Database Notes: Medication adherence composite ────────────
 # [Features_To_Include_Accepted_Suggestions.Rmd → Database Notes]
 #
 # ┌─────────────────────────────────────────────────────────────────┐
@@ -902,7 +937,7 @@ rx_feats <- rx_days_data |>
   mutate(rx_any_binary = 1L)
 
 
-# ── 27. Final assembly ────────────────────────────────────────────
+# ── 28. Final assembly ────────────────────────────────────────────
 # Left-join all feature tibbles onto the base (randomised participants only).
 # NAs for drug count/binary/streak features are filled with 0 (= no use).
 # NAs for clinical and demographic features are left as NA (genuine missing).
@@ -921,6 +956,7 @@ feature_list <- list(
   housing_stability_feats,
   rand_feats,
   rbs_feats,
+  heroin_rbs_feats,
   rbs_iv_feats,
   site_feats,
   withdrawal_pp_feats,
