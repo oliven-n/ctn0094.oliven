@@ -54,15 +54,62 @@ The CTN-0094 harmonized dataset combines three randomized clinical trials compar
 
 # Methods
 
-## Data
+## Subjects
 
-Data come from three NIDA Clinical Trials Network studies harmonized in the `public.ctn0094data` R package: CTN-0028 (methadone vs. buprenorphine-naloxone; n = 1,920), CTN-0030 (buprenorphine-naloxone only; n = 868), and CTN-0051 (extended-release naltrexone vs. buprenorphine-naloxone; n = 772). Only participants' first randomization is included; the CTN-0030 re-randomization step is excluded via an inner join on the earliest randomization date per participant.
+Data come from three NIDA Clinical Trials Network studies harmonized in the `public.ctn0094data` R package: CTN-0027 (methadone vs. buprenorphine-naloxone), CTN-0030 (buprenorphine-naloxone only), and CTN-0051 (extended-release naltrexone vs. buprenorphine-naloxone). Eligibility criteria for all three trials required a DSM-IV diagnosis of opioid dependence, age ≥ 18 years, and provision of informed consent. Only participants' first randomization is included; the CTN-0030 re-randomization step is excluded. The analysis sample includes `r nrow(analysis_base)` participants across `r n_distinct(analysis_base$project)` studies.
 
 ## Feature Engineering
 
-All longitudinal features are derived from a 28-day pre-randomization window (days −28 inclusive to day 0 exclusive), providing exactly four of each weekday per participant. Substance use features are computed from the `all_drugs` dataset, which is more granular than the standalone `tlfb` table and covers multiple detection sources (TLFB self-report, urine drug screen, and urine drug screen with alcohol biomarker). Rare drug categories (<10 events in the window) and illicit categories used by fewer than 1% of participants are excluded before feature computation. Per-drug features include days of use, binary use indicator, and longest consecutive streak where clinically meaningful. Additional feature domains include demographics, self-reported behavior risk, addiction severity, psychiatric comorbidity, quality of life, pain, nicotine dependence, and withdrawal severity. Feature engineering is implemented in `building_analysis.R`; sections requiring dataset column name resolution are marked with TODO and return placeholder columns until resolved.
+All longitudinal features are derived from a 28-day pre-randomization window (days −28 inclusive to day 0 exclusive), providing exactly four of each weekday per participant. Substance use features are computed from the `all_drugs` dataset, which is more granular than the standalone `tlfb` table and covers multiple detection sources (TLFB self-report, urine drug screen, and urine drug screen with alcohol biomarker). Rare drug categories (<10 events in the window) and illicit categories used by fewer than 1% of participants are excluded before feature computation. Per-drug features include days of use, binary use indicator, and longest consecutive streak where clinically meaningful. Additional feature domains include demographics, self-reported behavior risk, addiction severity, psychiatric comorbidity, quality of life, pain, nicotine dependence, and withdrawal severity. Feature engineering is implemented in `building_analysis.R`.
 
-Analyses were conducted with `r stringr::word(R.Version()$version.string, 1, 3)` with the `tidyverse` (`r packageVersion("tidyverse")`), `tidymodels` (`r packageVersion("tidymodels")`), and `gtsummary` (`r packageVersion("gtsummary")`) packages. [@R-base; @R-tidyverse; @tidyverse2019; @R-gtsummary]
+## Statistical Methods
+
+All models predict a binary relapse outcome from the pre-treatment feature matrix. Candidate models span interpretable baselines through high-capacity ensemble methods. Final model selection will be based on cross-validated area under the ROC curve (AUC-ROC).
+
+### Logistic Regression
+
+Standard binary logistic regression models the log-odds of relapse as a linear combination of predictors. Used as the interpretable baseline. Estimated via maximum likelihood; no regularization. Implemented in `tidymodels` using the `glm` engine.
+
+### LASSO
+
+L1-penalized logistic regression (Least Absolute Shrinkage and Selection Operator; Tibshirani, 1996) shrinks coefficients toward zero, performing automatic variable selection. Particularly useful given the high-dimensional feature matrix. The penalty parameter λ is selected via 10-fold cross-validation. Implemented via the `glmnet` engine in `tidymodels`.
+
+### KNN
+
+K-Nearest Neighbors classifies each observation by majority vote among its K nearest neighbors in feature space (Altman, 1992). Non-parametric; captures local non-linear structure without assuming a functional form. Features must be normalized to unit variance before distance computation. K is selected via cross-validation. Implemented via the `kknn` engine in `tidymodels`.
+
+### CART
+
+Classification and Regression Trees (Breiman et al., 1984) recursively partition the feature space by binary splits that minimize node impurity (Gini index). The resulting tree is interpretable as a set of if–then decision rules. Tree depth is controlled by cost-complexity pruning; the complexity parameter is selected via cross-validation. Implemented via the `rpart` engine in `tidymodels`.
+
+### Random Forest
+
+Random forests (Breiman, 2001) aggregate predictions from a large number of decorrelated decision trees, each trained on a bootstrap sample with a random subset of features at each split. The ensemble substantially reduces variance relative to a single tree. Number of trees, features per split, and minimum node size are tuned via cross-validation. Implemented via the `ranger` engine in `tidymodels`.
+
+### Boosted Trees
+
+Gradient boosted trees (Friedman, 2001; Chen & Guestrin, 2016) build an additive ensemble by sequentially fitting trees to the residuals of the current ensemble. Typically achieves high predictive accuracy but requires careful regularization (learning rate, tree depth, subsampling fraction) to prevent overfitting. Hyperparameters tuned via cross-validation. Implemented via the `xgboost` engine in `tidymodels`.
+
+## Software
+
+Analyses were conducted with `r stringr::word(R.Version()$version.string, 1, 3)`. The following R packages were used:
+
+```{r tbl-software}
+#| tbl-cap: "R packages used in this analysis."
+
+tibble::tribble(
+  ~Package,               ~Version,                                           ~Purpose,
+  "tidyverse",            as.character(packageVersion("tidyverse")),           "Data manipulation and visualization (ggplot2, dplyr, tidyr, readr, purrr, stringr)",
+  "tidymodels",           as.character(packageVersion("tidymodels")),          "Modeling framework (recipes, parsnip, rsample, yardstick, tune, workflows)",
+  "gtsummary",            as.character(packageVersion("gtsummary")),           "Summary tables",
+  "knitr",                as.character(packageVersion("knitr")),               "Document rendering and table formatting",
+  "public.ctn0094data",   as.character(packageVersion("public.ctn0094data")),  "CTN-0094 harmonized clinical trial data",
+  "conflicted",           as.character(packageVersion("conflicted")),          "Explicit conflict resolution for package namespaces"
+) |>
+  kable(align = "lll", col.names = c("Package", "Version", "Purpose"))
+```
+
+The following packages will be added at modeling time: `glmnet` (LASSO/ridge), `kknn` (KNN), `rpart` (CART), `ranger` (Random Forest), `xgboost` (Boosted Trees). [@R-base; @R-tidyverse; @tidyverse2019; @R-gtsummary]
 
 # Results
 
