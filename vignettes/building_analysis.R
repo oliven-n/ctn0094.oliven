@@ -481,34 +481,25 @@ fager_feats <- fagerstrom |>
   )
 
 
-# ── 12. Pain: main effect ─────────────────────────────────────────
+# ── 12. Pain: baseline scalar ─────────────────────────────────────
 # [Features_To_Include_Accepted_Suggestions.Rmd → pain]
 #
-# glimpse(pain): who (int), when (int), pain (fct: "No Pain" /
-# "Very mild to Moderate Pain" / "Severe Pain" / "Missing").
-# Scored ordinally: No Pain → 0, Very mild to Moderate → 1, Severe → 2, Missing → NA.
+# pain has one row per participant (single intake assessment — SF-36 for
+# CTN-0027/0030, EuroQoL for CTN-0051). Not a longitudinal daily variable.
+# Window aggregates would be meaningless here; a direct scalar is correct.
+#
+# NOTE: participant 3031 has when = -1 (only negative when in pain).
+# Q for Dr. Balise: data entry error or genuine pre-randomization assessment?
 
-pain_window <- pain |>
-  filter(when >= -28, when < 0) |>
+pain_main_feats <- pain |>
   transmute(
     who,
-    when,
     pain_score = case_when(
       pain == "No Pain"                    ~ 0L,
       pain == "Very mild to Moderate Pain" ~ 1L,
       pain == "Severe Pain"                ~ 2L,
       .default = NA_integer_
     )
-  )
-
-pain_main_feats <- pain_window |>
-  group_by(who) |>
-  summarise(
-    pain_mean         = mean(pain_score, na.rm = TRUE),
-    pain_max          = max(pain_score,  na.rm = TRUE),
-    pct_days_severe   = mean(pain_score == 2, na.rm = TRUE),
-    pct_days_any_pain = mean(pain_score  > 0, na.rm = TRUE),
-    .groups = "drop"
   )
 
 
@@ -756,96 +747,159 @@ study_drug_feats <- analysis_base |>
   transmute(who, took_own_study_drug, took_other_study_drug)
 
 
-# ── 21. Database Notes: Pain × hard drug interaction ─────────────
-# [Features_To_Include_Accepted_Suggestions.Rmd → Database Notes: pain x tlfb 1]
+# ── 21. Withdrawal: main effect (windowed aggregates) ─────────────
+# [Features_To_Include_Accepted_Suggestions.Rmd → withdrawal]
 #
-# Hard drug composite: Heroin, Fentanyl, Cocaine, Crack,
-#                      Methamphetamine, Amphetamine
+# withdrawal (COWS/SOWS daily severity) is the longitudinal daily variable
+# for this feature set — the role pain was incorrectly proposed to fill.
+# Factor levels: 0=None, 1=mild, 2=moderate, 3=severe → coerced to integer.
 #
-# Feature 1 — pain_harddrug_corr:
-#   Person-level Pearson r between daily pain score and daily hard-drug
-#   binary (0/1) across days -28 to -1. Undefined correlation coded as 0
-#   (0 hard drug days) or NA (all hard drug days — zero variance).
+# Four aggregate features (same pattern as old pain aggregates from §12):
+#   withdrawal_mean      — mean severity across window days
+#   withdrawal_max       — peak severity in window
+#   wdl_pct_days_severe  — proportion of days at severe (score == 3)
+#   wdl_pct_days_any     — proportion of days with any withdrawal (score > 0)
 #
-# Feature 2 — pain_highrisk_harddrug_rate:
-#   Proportion of above-median pain days that also had hard drug use.
+# NOTE TO NAT — IMPLEMENTATION DEFERRED:
+# withdrawal$when ranges [0, 374]. The pre-study window filter
+# (when >= -28 & when < 0) captures no withdrawal data under the current
+# anchor. All features will be all-NA until the day_zero window calibration
+# commit. DO NOT change the filter here — that is a separate commit.
 
-hard_drug_cats <- c("Heroin", "Fentanyl", "Cocaine", "Crack",
-                    "Methamphetamine", "Amphetamine")
+wdl_main_feats <- analysis_base |> select(who)
 
-hard_drug_days_flag <- all_drugs_filtered |>
-  filter(as.character(what_grouped) %in% hard_drug_cats) |>
-  distinct(who, when) |>
-  mutate(harddrug_use = 1L)
-
-# TODO: replace pain_score with actual column name from pain dataset
-pain_hard_daily <- pain |>
-  filter(when >= -28, when < 0) |>
-  # TODO: rename pain score column: select(who, when, pain_score = <PAIN_COL>)
-  left_join(hard_drug_days_flag, by = c("who", "when")) |>
-  mutate(harddrug_use = replace_na(harddrug_use, 0L))
-
-pain_hard_feats <- pain_hard_daily |>
-  group_by(who) |>
-  summarize(.groups = "drop")
-  # TODO: add after resolving pain_score column:
-  # pain_harddrug_corr = {
-  #   nd <- sum(harddrug_use)
-  #   if (nd == 0L) 0
-  #   else if (nd == n()) NA_real_
-  #   else suppressWarnings(cor(pain_score, harddrug_use, use = "complete.obs"))
-  # },
-  # pain_highrisk_harddrug_rate = {
-  #   med <- median(pain_score, na.rm = TRUE)
-  #   high_pain_days <- pain_score > med
-  #   if (sum(high_pain_days, na.rm = TRUE) == 0L) NA_real_
-  #   else mean(harddrug_use[high_pain_days], na.rm = TRUE)
-  # },
+# wdl_main_feats <- withdrawal |>
+#   mutate(score = as.integer(as.character(withdrawal))) |>
+#   filter(when >= -28, when < 0) |>
+#   group_by(who) |>
+#   summarize(
+#     withdrawal_mean     = mean(score, na.rm = TRUE),
+#     withdrawal_max      = max(score,  na.rm = TRUE),
+#     wdl_pct_days_severe = mean(score == 3, na.rm = TRUE),
+#     wdl_pct_days_any    = mean(score  > 0, na.rm = TRUE),
+#     .groups = "drop"
+#   )
 
 
-# ── 22. Database Notes: Pain × soft drug interaction ─────────────
-# [Features_To_Include_Accepted_Suggestions.Rmd → Database Notes: pain x tlfb 2]
+# ── 22. Database Notes: Withdrawal × hard drug interaction ────────
+# [Features_To_Include_Accepted_Suggestions.Rmd → Database Notes]
 #
-# Soft drug composite: Cannabinoids, Alcohol Light Amnt, Caffeine
-# (Alcohol Heavy Amnt excluded; Nicotine not in all_drugs; Caffeine dropped by primary filter)
+# Self-medication hypothesis: participants who use more HARD drugs on days
+# of higher withdrawal severity are more likely to relapse post-treatment.
+# Pain was originally proposed here, but pain is a cross-sectional scalar
+# (one row per person). withdrawal (COWS/SOWS daily) is the correct
+# longitudinal severity measure.
 #
-# Feature 1 — pain_softdrug_corr (expect negative or near zero)
-# Feature 2 — pain_highrisk_softdrug_rate (expect negative association with relapse)
+# Hard drug composite: Heroin, Fentanyl, Cocaine, Crack, Methamphetamine,
+#                      Amphetamine, Opioid (prescription opioids via drug_map).
+# "Opioid" added: prescription opioid use on high-withdrawal days is the
+# core self-medication pathway. Does NOT include MOUD (Buprenorphine/
+# Suboxone/Methadone are separate pass-through categories in what_grouped).
+#
+# NOTE TO NAT — IMPLEMENTATION DEFERRED:
+# withdrawal$when ranges [0, 374]. The pre-study window filter
+# (when >= -28 & when < 0) captures no withdrawal data under the current
+# anchor. Features will be all-NA until the day_zero window calibration
+# commit. DO NOT change the filter here — that is a separate commit.
 
-soft_drug_cats <- c("Cannabinoids", "Alcohol Light Amnt", "Caffeine")
+hard_drug_cats <- c(
+  "Heroin", "Fentanyl", "Cocaine", "Crack",
+  "Methamphetamine", "Amphetamine", "Opioid"
+)
 
-soft_drug_days_flag <- all_drugs_filtered |>
-  filter(as.character(what_grouped) %in% soft_drug_cats) |>
-  distinct(who, when) |>
-  mutate(softdrug_use = 1L)
+withdrawal_hard_feats <- analysis_base |> select(who)
 
-# TODO: replace pain_score with actual column name
-pain_soft_daily <- pain |>
-  filter(when >= -28, when < 0) |>
-  # TODO: select(who, when, pain_score = <PAIN_COL>)
-  left_join(soft_drug_days_flag, by = c("who", "when")) |>
-  mutate(softdrug_use = replace_na(softdrug_use, 0L))
+# # Full implementation — uncomment after day_zero window calibration:
+# #
+# # Like all_drugs_filtered but WITHOUT the >=10 primary filter — that filter
+# # was designed for standalone drug count features (§5), not for a daily
+# # binary flag where even a single rare event is meaningful.
+# hard_drug_days_flag <- all_drugs_grouped |>
+#   filter(when >= -28, when < 0,
+#          as.character(what_grouped) %in% hard_drug_cats) |>
+#   distinct(who, when) |>
+#   mutate(harddrug_use = 1L)
+#
+# # withdrawal is an ordered factor: 0=None, 1=mild, 2=moderate, 3=severe.
+# withdrawal_numeric <- withdrawal |>
+#   mutate(score = as.integer(as.character(withdrawal))) |>
+#   filter(when >= -28, when < 0) |>
+#   transmute(who, when, withdrawal_score = score)
+#
+# withdrawal_hard_feats <- withdrawal_numeric |>
+#   left_join(hard_drug_days_flag, by = c("who", "when")) |>
+#   mutate(harddrug_use = replace_na(harddrug_use, 0L)) |>
+#   group_by(who) |>
+#   summarize(
+#     withdrawal_harddrug_corr = {
+#       nd <- sum(harddrug_use)
+#       if (nd == 0L) 0
+#       else if (nd == n()) NA_real_
+#       else suppressWarnings(cor(withdrawal_score, harddrug_use, use = "complete.obs"))
+#     },
+#     withdrawal_highrisk_harddrug_rate = {
+#       med <- median(withdrawal_score, na.rm = TRUE)
+#       high_wdl_days <- withdrawal_score > med
+#       if (sum(high_wdl_days, na.rm = TRUE) == 0L) NA_real_
+#       else mean(harddrug_use[high_wdl_days], na.rm = TRUE)
+#     },
+#     .groups = "drop"
+#   ) |>
+#   transmute(who, withdrawal_harddrug_corr, withdrawal_highrisk_harddrug_rate)
 
-pain_soft_feats <- pain_soft_daily |>
-  group_by(who) |>
-  summarize(.groups = "drop")
-  # TODO: add after resolving pain_score column:
-  # pain_softdrug_corr = {
-  #   nd <- sum(softdrug_use)
-  #   if (nd == 0L) 0
-  #   else if (nd == n()) NA_real_
-  #   else suppressWarnings(cor(pain_score, softdrug_use, use = "complete.obs"))
-  # },
-  # pain_highrisk_softdrug_rate = {
-  #   med <- median(pain_score, na.rm = TRUE)
-  #   high_pain_days <- pain_score > med
-  #   if (sum(high_pain_days, na.rm = TRUE) == 0L) NA_real_
-  #   else mean(softdrug_use[high_pain_days], na.rm = TRUE)
-  # },
+
+# ── 23. Database Notes: Withdrawal × soft drug interaction ────────
+# [Features_To_Include_Accepted_Suggestions.Rmd → Database Notes]
+#
+# Protective-substitution hypothesis: participants who use SOFT drugs
+# (cannabis, light alcohol) on high-withdrawal days are LESS likely to
+# relapse — substituting non-opioids for opioids when withdrawal peaks.
+# Soft drug composite: Cannabinoids, Alcohol Light Amnt.
+# Caffeine removed — not present in all_drugs_grouped within the window.
+# Alcohol Heavy Amnt excluded (not a "soft" use pattern).
+#
+# NOTE TO NAT — IMPLEMENTATION DEFERRED: same window anchor issue as §22.
+# withdrawal$when ranges [0, 374]; pre-study filter captures nothing currently.
+# DO NOT change the filter — that is a separate day_zero calibration commit.
+
+soft_drug_cats <- c("Cannabinoids", "Alcohol Light Amnt")
+
+withdrawal_soft_feats <- analysis_base |> select(who)
+
+# # Full implementation — uncomment after day_zero window calibration:
+# #
+# # Like all_drugs_filtered but WITHOUT the >=10 primary filter (see §22 note).
+# # withdrawal_numeric is defined in §22's commented block — uncomment both together.
+# soft_drug_days_flag <- all_drugs_grouped |>
+#   filter(when >= -28, when < 0,
+#          as.character(what_grouped) %in% soft_drug_cats) |>
+#   distinct(who, when) |>
+#   mutate(softdrug_use = 1L)
+#
+# withdrawal_soft_feats <- withdrawal_numeric |>
+#   left_join(soft_drug_days_flag, by = c("who", "when")) |>
+#   mutate(softdrug_use = replace_na(softdrug_use, 0L)) |>
+#   group_by(who) |>
+#   summarize(
+#     withdrawal_softdrug_corr = {
+#       nd <- sum(softdrug_use)
+#       if (nd == 0L) 0
+#       else if (nd == n()) NA_real_
+#       else suppressWarnings(cor(withdrawal_score, softdrug_use, use = "complete.obs"))
+#     },
+#     withdrawal_highrisk_softdrug_rate = {
+#       med <- median(withdrawal_score, na.rm = TRUE)
+#       high_wdl_days <- withdrawal_score > med
+#       if (sum(high_wdl_days, na.rm = TRUE) == 0L) NA_real_
+#       else mean(softdrug_use[high_wdl_days], na.rm = TRUE)
+#     },
+#     .groups = "drop"
+#   ) |>
+#   transmute(who, withdrawal_softdrug_corr, withdrawal_highrisk_softdrug_rate)
 
 
 
-# ── 23. Database Notes: Heroin denial — all_drugs × rbs ───────────
+# ── 24. Database Notes: Heroin denial — all_drugs × rbs ───────────
 # [Features_To_Include_Accepted_Suggestions.Rmd → Database Notes]
 #
 # Cross-dataset feature: compares all_drugs heroin records (§5) against
@@ -880,29 +934,31 @@ heroin_rbs_feats <- heroin_denial_fast_compute |>
   transmute(who, heroin_rbs_alldr_incons)
 
 
-# ── 24. Database Notes: Psychiatric × pain and psychiatric × drug ──
+# ── 25. Database Notes: Psychiatric × withdrawal and psychiatric × drug ──
 # [Features_To_Include_Accepted_Suggestions.Rmd → Database Notes]
 #
 # Interactions between psychiatric comorbidities (§13) and:
-#   - pain main effects (§12): depression/anxiety amplify pain-triggered relapse
+#   - withdrawal main effects (§21): depression/anxiety amplify withdrawal-driven
+#     craving and drug-seeking. withdrawal_mean/max will be NA until the
+#     day_zero calibration commit — these features will be all-NA until then.
 #   - benzodiazepine use (§5): anxiety + benzo co-use = elevated CNS/OD risk
 # NA in benzodiazepine_days means no observed use → imputed 0 before multiplying.
 
 psych_cross_feats <- analysis_base |>
-  left_join(select(psych_feats,     who, has_major_dep, has_anx_pan), by = "who") |>
-  left_join(select(pain_main_feats, who, pain_mean, pain_max),        by = "who") |>
-  left_join(select(drug_feats,      who, benzodiazepine_days),        by = "who") |>
+  left_join(select(psych_feats,    who, has_major_dep, has_anx_pan),       by = "who") |>
+  left_join(select(wdl_main_feats, who, withdrawal_mean, withdrawal_max),   by = "who") |>
+  left_join(select(drug_feats,     who, benzodiazepine_days),               by = "who") |>
   transmute(
     who,
-    has_major_dep_x_pain_mean         = has_major_dep * pain_mean,
-    has_major_dep_x_pain_max          = has_major_dep * pain_max,
-    has_anx_pan_x_pain_mean           = has_anx_pan   * pain_mean,
-    has_anx_pan_x_pain_max            = has_anx_pan   * pain_max,
-    has_anx_pan_x_benzodiazepine_days = has_anx_pan   * replace_na(benzodiazepine_days, 0L)
+    has_major_dep_x_withdrawal_mean       = has_major_dep * withdrawal_mean,
+    has_major_dep_x_withdrawal_max        = has_major_dep * withdrawal_max,
+    has_anx_pan_x_withdrawal_mean         = has_anx_pan   * withdrawal_mean,
+    has_anx_pan_x_withdrawal_max          = has_anx_pan   * withdrawal_max,
+    has_anx_pan_x_benzodiazepine_days     = has_anx_pan   * replace_na(benzodiazepine_days, 0L)
   )
 
 
-# ── 25. Database Notes: Housing stability (cross-dataset) ──────────
+# ── 26. Database Notes: Housing stability (cross-dataset) ──────────
 # [Features_To_Include_Accepted_Suggestions.Rmd → Database Notes]
 #
 # Combines is_living_stable (demographics, all studies, subjective perceived
@@ -946,31 +1002,31 @@ housing_stability_feats <- analysis_base |>
   )
 
 
-# ── 26. Database Notes: Withdrawal trajectory ─────────────────────
+# ── 27. Database Notes: Withdrawal trajectory ─────────────────────
 # [Features_To_Include_Accepted_Suggestions.Rmd → Database Notes]
 #
-# Slope of withdrawal symptom scores (COWS/SOWS) over days -28 to -1.
-# Positive slope = worsening withdrawal = escalating dependence.
+# Slope of COWS/SOWS withdrawal scores over the pre-study window.
+# Positive slope = worsening withdrawal = escalating dependence before entry.
 # Estimated per person via simple linear regression: score ~ when.
+# Requires >= 2 observations per participant in the window.
+#
+# NOTE TO NAT — IMPLEMENTATION DEFERRED:
+# withdrawal$when ranges [0, 374]; pre-study filter captures nothing currently.
+# DO NOT change the filter — that is a separate day_zero calibration commit.
 
-# INSPECT — run this to confirm column names
-glimpse(withdrawal)
-# Expected: who, when, and a score column (COWS or SOWS total)
-# TODO: replace <SCORE_COL> with the actual column name
+withdrawal_traj_feats <- analysis_base |> select(who)
 
-withdrawal_traj_feats <- withdrawal |>
-  filter(when >= -28, when < 0) |>
-  group_by(who) |>
-  summarize(.groups = "drop")
-  # TODO: add after resolving withdrawal score column:
-  # withdrawal_slope = if (n() >= 2L) {
-  #   coef(lm(<SCORE_COL> ~ when, data = cur_data()))[["when"]]
-  # } else {
-  #   NA_real_
-  # },
+# withdrawal_traj_feats <- withdrawal |>
+#   mutate(score = as.integer(as.character(withdrawal))) |>
+#   filter(when >= -28, when < 0) |>
+#   group_by(who) |>
+#   summarize(
+#     withdrawal_slope = if (n() >= 2L) coef(lm(score ~ when))[["when"]] else NA_real_,
+#     .groups = "drop"
+#   )
 
 
-# ── 27. Database Notes: Medication adherence composite ────────────
+# ── 28. Database Notes: Medication adherence composite ────────────
 # [Features_To_Include_Accepted_Suggestions.Rmd → Database Notes]
 #
 # ┌─────────────────────────────────────────────────────────────────┐
@@ -1009,7 +1065,7 @@ rx_feats <- rx_days_data |>
   mutate(rx_any_binary = 1L)
 
 
-# ── 28. Final assembly ────────────────────────────────────────────
+# ── 29. Final assembly ────────────────────────────────────────────
 # Left-join all feature tibbles onto the base (randomised participants only).
 # NAs for drug count/binary/streak features are filled with 0 (= no use).
 # NAs for clinical and demographic features are left as NA (genuine missing).
@@ -1033,8 +1089,9 @@ feature_list <- list(
   site_feats,
   withdrawal_pp_feats,
   study_drug_feats,
-  pain_hard_feats,
-  pain_soft_feats,
+  wdl_main_feats,
+  withdrawal_hard_feats,
+  withdrawal_soft_feats,
   psych_cross_feats,
   withdrawal_traj_feats,
   rx_feats

@@ -831,7 +831,7 @@ glimpse(fagerstrom)
 
 ---
 
-# ── 12. Pain: main effect ─────────────────────────────────────────
+# ── 12. Pain: baseline scalar ─────────────────────────────────────
 
 ## pain
 
@@ -839,16 +839,15 @@ glimpse(fagerstrom)
 glimpse(pain)
 ```
 
+### Dataset Notes
+
+`pain$when` ranges from −1 to 955. Pain is a **cross-sectional baseline measure** — one row per participant collected at the intake visit (SF-36 for CTN-0027/0030, EuroQoL for CTN-0051). Not a daily longitudinal variable; window aggregates are meaningless. Longitudinal daily self-medication features have moved to §22/§23 using `withdrawal` (COWS/SOWS) as the correct daily measure.
+
 #### Feature proposal
 
-Pain is recorded as an ordinal factor: `"No Pain"` (scored 0), `"Very mild to Moderate Pain"` (1), `"Severe Pain"` (2), `"Missing"` (→ NA). Four features computed across the −28 to 0 window:
+**`pain_score`** — ordinal integer: 0 = No Pain, 1 = Very mild to Moderate Pain, 2 = Severe Pain, NA = Missing. Scalar baseline pain severity at intake.
 
-- **`pain_mean`**: mean ordinal score across days with non-missing pain records.
-- **`pain_max`**: maximum ordinal score in the window.
-- **`pct_days_severe`**: proportion of non-missing days where pain was severe (score = 2).
-- **`pct_days_any_pain`**: proportion of non-missing days where any pain was reported (score > 0).
-
-Self-reported pain is independently associated with OUD treatment dropout and relapse, above and beyond the pain × drug use interaction proposed in the Database Notes (Rhodin et al. 2006; Dunn et al. 2014). Chronic pain is a key driver of opioid self-medication and should appear both as a main effect and in the interaction terms.
+Self-reported baseline pain is independently associated with OUD treatment dropout and relapse (Rhodin et al. 2006; Dunn et al. 2014). Used as a scalar in psychiatric interaction terms (§25).
 
 ---
 
@@ -902,7 +901,7 @@ The `psychiatric` dataset provides 18 features. All Yes/No flags are encoded 0/1
 - **`substance_dx_count`**: sum of the 5 non-opioid SUD diagnoses (`has_opiates_dx` excluded — near-universal in this sample). Captures polysubstance disorder burden.
 - **`dep_or_anx_binary`**: 1 if `depression_binary == 1` OR `anxiety_binary == 1`. The internalizing comorbidity cluster is the most replicated psychiatric predictor of OUD relapse; co-occurring depression roughly halves abstinence rates in MOUD trials (Nunes & Levin 2004).
 
-Cross-dataset interactions (psychiatric × pain, psychiatric × benzodiazepine) are in §24.
+Cross-dataset interactions (psychiatric × withdrawal, psychiatric × benzodiazepine) are in §25.
 
 ---
 
@@ -922,9 +921,9 @@ glimpse(qol)
 
 **`is_homeless` binary** (0/1 integer). Objective housing status at baseline. Homelessness is among the strongest predictors of OUD treatment dropout and relapse across MOUD modalities — it captures housing instability, lack of safe space to store/take medication, and social environment risk in a single binary flag (Tsemberis et al. 2004; Palepu et al. 2006).
 
-> **⚠️ Cross-dataset note: `is_living_stable` × `is_homeless` discordance (see §24)**
+> **⚠️ Cross-dataset note: `is_living_stable` × `is_homeless` discordance (see §26)**
 >
-> `is_living_stable` (demographics, all studies) and `is_homeless` (qol, CTN-0051 only) are related but distinct constructs. An inner join reveals **128 participants coded (Yes, Yes)** — stable living AND homeless simultaneously. All 128 are CTN-0051; this reflects shelter residents who perceive their shelter as "stable." The two variables measure different things: **subjective perceived stability** vs. **objective permanent housing status**. Including both as raw binaries masks this and creates near-collinearity for some patterns. See §24 for the `housing_stability_ord` ordered factor that combines them explicitly.
+> `is_living_stable` (demographics, all studies) and `is_homeless` (qol, CTN-0051 only) are related but distinct constructs. An inner join reveals **128 participants coded (Yes, Yes)** — stable living AND homeless simultaneously. All 128 are CTN-0051; this reflects shelter residents who perceive their shelter as "stable." The two variables measure different things: **subjective perceived stability** vs. **objective permanent housing status**. Including both as raw binaries masks this and creates near-collinearity for some patterns. See §26 for the `housing_stability_ord` ordered factor that combines them explicitly.
 
 ---
 
@@ -952,7 +951,7 @@ Note: the `treatment` column in `first_rand` already uniquely identifies the stu
 glimpse(rbs)
 ```
 
-**Note: rbs dropped from main feature set.** The dataset contains only 5 drug categories (cocaine, heroin, speedball, opioid, speed) with bucketed day counts (0/4/30) — a coarser, same-source-type duplicate of the −28 to 0 drug event data already captured at higher resolution in `drug_feats`. The only unique signal extracted is the heroin denial flag (`heroin_rbs_alldr_incons`), computed as a cross-dataset feature in §23.
+**Note: rbs dropped from main feature set.** The dataset contains only 5 drug categories (cocaine, heroin, speedball, opioid, speed) with bucketed day counts (0/4/30) — a coarser, same-source-type duplicate of the −28 to 0 drug event data already captured at higher resolution in `drug_feats`. The only unique signal extracted is the heroin denial flag (`heroin_rbs_alldr_incons`), computed as a cross-dataset feature in §24.
 
 #### Feature proposal
 
@@ -1082,62 +1081,75 @@ What are the study drugs?
 
 ---
 
-# ── 21. Database Notes: Pain × hard drug interaction ─────────────
+# ── 21. Withdrawal: main effect (windowed aggregates) ─────────────
+
+## withdrawal
+
+### Dataset Notes
+
+```{r withdrawal-overview}
+glimpse(withdrawal)
+```
+
+`withdrawal` (COWS/SOWS daily severity) is the longitudinal daily variable for this feature set — the role pain was incorrectly proposed to fill. CTN-0027/0030 use COWS; CTN-0051 uses SOWS. Factor levels: 0=None, 1=mild, 2=moderate, 3=severe.
+
+`withdrawal$when` ranges [0, 374] — currently all post-randomization. All features here will be all-NA until the `day_zero` window calibration commit (see top-of-file critical warning in §19).
+
+#### Feature proposal
+
+Four aggregate features over the pre-study window (same pattern as old pain aggregates):
+
+- **`withdrawal_mean`**: mean COWS/SOWS score across window days.
+- **`withdrawal_max`**: peak severity in window.
+- **`wdl_pct_days_severe`**: proportion of days at severe (score = 3).
+- **`wdl_pct_days_any`**: proportion of days with any withdrawal (score > 0).
+
+> **NOTE: Implementation deferred.** `withdrawal$when` ranges [0, 374]; pre-study window filter captures no data currently. All-NA until `day_zero` window calibration commit.
+
+---
+
+# ── 22. Database Notes: Withdrawal × hard drug interaction ────────
 
 ## Database Notes
 
-### Feature proposal: pain x tlfb 1
+### Feature proposal: withdrawal x hard drug
 
-Hypothesis: participants who use more HARD drugs (adjusted for average drugs per day pre-treatment) on the days they are experiencing more pain are MORE likely to relapse. I also expect this to be especially important for XR-NTX because severe withdrawal symptoms towards the end of the injection month predict relapse. Those who already have an underlying tendency to self-medicate their pain may be more subject to this.
+Hypothesis: participants who use more HARD drugs on the days they are experiencing more withdrawal severity are MORE likely to relapse. Pain was originally proposed here, but pain is a cross-sectional scalar (one row per person). `withdrawal` (daily COWS/SOWS) is the correct daily longitudinal measure.
 
-**Q: Pool hard drugs or keep separate?**
+**Hard drug composite**: Heroin, Fentanyl, Cocaine, Crack, Methamphetamine, Amphetamine, Opioid (prescription opioids via `drug_map`). Opioid included because prescription opioid misuse on high-withdrawal days is the core self-medication pathway. Does NOT include MOUD (Buprenorphine/Suboxone/Methadone are separate pass-through categories).
 
-For the pain interaction term: pool. Use a composite "hard drug days" count (heroin + fentanyl + cocaine + crack + methamphetamine) as the operand in the interaction feature. The sparse 28-day window means per-drug interaction counts will be near-zero for most participants, giving the model almost nothing to work with. The composite is robust to this sparsity and directly tests the self-medication hypothesis.
+**Feature 1 — `withdrawal_harddrug_corr`**: Person-level Pearson correlation between daily withdrawal score (0–3) and daily hard-drug-use binary across the pre-study window. If 0 hard drug days: coded as 0. If all days had hard drug use (zero variance): coded as NA.
 
-Keep individual drug counts as separate main-effect features (which they are, from the expanded "days per person" section above). If there is a drug-specific interaction of interest — e.g., heroin use on high-pain days specifically — that can be added as a secondary feature, but it should not replace the composite.
+**Feature 2 — `withdrawal_highrisk_harddrug_rate`**: Among days where the person's withdrawal score exceeds their own median for the window, the proportion of those days that also had hard drug use. Directly operationalises "self-medicating high-withdrawal days."
 
-Recommended feature: `pain_harddrug_composite_corr` (see measurement question below).
-
-**Q: Best way to measure panel correlation per person? (Same-day assumption.)**
-
-The same-day assumption is reasonable and computationally simplest. For the 28-day window, two complementary scalar features are recommended:
-
-**Feature 1 — `pain_harddrug_corr`**: Person-level Pearson correlation between daily pain score and daily hard-drug-use binary (0 = no hard drug use on that day, 1 = any hard drug use) across days −28 to −1. Pearson is appropriate here (pain is continuous; drug use is binary but treated as numeric). Spearman is a robust alternative if pain scores are skewed.
-
-*Handles sparsity problem*: If a person used hard drugs on 0 days in the window, the correlation is undefined — code as 0 (no co-occurrence tendency). If they used on all 28 days, correlation is also undefined (zero-variance drug column) — code as `NA` and impute or drop.
-
-**Feature 2 — `pain_highrisk_harddrug_rate`**: Among days where the person's pain score exceeds their own median pain for the window, the proportion of those days that also had hard drug use. This feature is interpretable, handles zero-inflated drug data better than correlation, and directly operationalises "self-medicating bad pain days." It is also bounded [0, 1] which aids some models.
-
-Both features capture the same construct from different angles. Include both in the analysis tibble and let the ML pipeline determine which carries signal.
+> **NOTE: Implementation deferred.** `withdrawal$when` ranges [0, 374]; pre-study window filter captures no data currently. All-NA until `day_zero` window calibration commit.
 
 Confirmatory factor: Self-medication tendency
 
 ---
 
-# ── 22. Database Notes: Pain × soft drug interaction ─────────────
+# ── 23. Database Notes: Withdrawal × soft drug interaction ────────
 
 ## Database Notes
 
-### Feature proposal 1: pain x tlfb 2
+### Feature proposal: withdrawal x soft drug
 
-Hypothesis: participants who use more SOFT (coffee, weed, etc.) drugs (adjusted for average drugs per day pre-treatment) on the days they are experiencing more pain are LESS likely to relapse.
+Hypothesis: participants who use SOFT drugs (cannabis, light alcohol) on high-withdrawal days are LESS likely to relapse — substituting non-opioids for opioids when withdrawal peaks. Pain was originally proposed here, but pain is a cross-sectional scalar.
 
-Explanation: Participants who self-medicate their pain with non-opioids may turn to these first when they experience withdrawal symptoms.
+**Soft drug composite**: Cannabinoids, Alcohol Light Amnt. Caffeine removed — not present in `all_drugs_grouped` within the window. Alcohol Heavy Amnt excluded (not a "soft" use pattern).
 
-Apply the same two-feature operationalisation as pain × hard drugs above:
+Apply the same two-feature operationalisation as withdrawal × hard drugs above:
 
-- `pain_softdrug_corr`: Pearson correlation between daily pain and daily soft-drug binary (Cannabinoids, Alcohol Light Amnt, Caffeine — the "soft drug" composite) across days −28 to −1.
-- `pain_highrisk_softdrug_rate`: Proportion of high-pain days (above personal median) on which any soft drug was used.
+- **`withdrawal_softdrug_corr`**: Pearson correlation between daily withdrawal score and daily soft-drug binary across the pre-study window. Expect negative (protective direction).
+- **`withdrawal_highrisk_softdrug_rate`**: Proportion of above-personal-median withdrawal days on which any soft drug was used. Protective-substitution indicated by higher rate being associated with lower relapse risk.
 
-The hypothesis predicts a **negative** `pain_softdrug_corr` (or near zero), and a **negative** association between `pain_highrisk_softdrug_rate` and relapse. This is the protective-substitution hypothesis and is distinct from the general soft-drug use main effect.
-
-**Soft drug composite definition**: Cannabinoids + Alcohol Light Amnt + Caffeine (using post-`drug_map` category names). Exclude Alcohol Heavy Amnt from the soft drug composite since it crosses into substance-of-concern territory. Nicotine could be included or kept separate.
+> **NOTE: Implementation deferred.** Same window anchor issue as §22. `withdrawal$when` ranges [0, 374]; pre-study filter captures nothing. All-NA until `day_zero` calibration commit. `withdrawal_numeric` defined in §22's commented block — uncomment both sections together.
 
 Confirmatory factor: Self-medication tendency
 
 ---
 
-# ── 23. Database Notes: Heroin denial — all_drugs × rbs ─────────────
+# ── 24. Database Notes: Heroin denial — all_drugs × rbs ─────────────
 
 ## all_drugs × rbs
 
@@ -1157,33 +1169,35 @@ Confirmatory factor: Denial/minimization of primary drug of abuse
 
 ---
 
-# ── 24. Database Notes: Psychiatric × pain and psychiatric × drug interactions ──
+# ── 25. Database Notes: Psychiatric × withdrawal and psychiatric × drug interactions ──
 
-## psychiatric × pain_main_feats × drug_feats
+## psychiatric × wdl_main_feats × drug_feats
 
 #### Feature proposal
 
-Five interaction features computed in `psych_cross_feats` after §13 (`psych_feats`), §12 (`pain_main_feats`), and §5 (`drug_feats`) all exist.
+Five interaction features computed in `psych_cross_feats` from §13 (`psych_feats`), §21 (`wdl_main_feats`), and §5 (`drug_feats`). Pain scalar interactions removed — `pain_score × has_major_dep` etc. are near-collinear with the psychiatric binary itself and add no information beyond the main effect.
 
 | Feature | Formula | Construct |
 |---|---|---|
-| `has_major_dep_x_pain_mean` | `has_major_dep × pain_mean` | Depression × chronic pain burden |
-| `has_major_dep_x_pain_max` | `has_major_dep × pain_max` | Depression × acute severe pain episodes |
-| `has_anx_pan_x_pain_mean` | `has_anx_pan × pain_mean` | Anxiety × chronic pain (catastrophizing) |
-| `has_anx_pan_x_pain_max` | `has_anx_pan × pain_max` | Anxiety × acute severe pain |
+| `has_major_dep_x_withdrawal_mean` | `has_major_dep × withdrawal_mean` | Depression × chronic withdrawal burden |
+| `has_major_dep_x_withdrawal_max` | `has_major_dep × withdrawal_max` | Depression × peak acute withdrawal |
+| `has_anx_pan_x_withdrawal_mean` | `has_anx_pan × withdrawal_mean` | Anxiety × chronic withdrawal (craving amplification) |
+| `has_anx_pan_x_withdrawal_max` | `has_anx_pan × withdrawal_max` | Anxiety × acute peak withdrawal |
 | `has_anx_pan_x_benzodiazepine_days` | `has_anx_pan × benzodiazepine_days` | Anxiety + benzo co-use = elevated pharmacological overdose risk |
 
-**Depression × pain**: The depression–chronic pain cycle is among the best-documented self-medication pathways in OUD. Depression lowers pain threshold and depletes dopaminergic reward circuitry, while chronic pain exacerbates depressive symptoms — a bidirectional reinforcing cycle (Sheng et al. 2017). In OUD populations this predicts opioid escalation and treatment dropout (Rhodin et al. 2006; Sullivan et al. 2006). `pain_mean` captures chronic burden; `pain_max` captures acute severe episodes as distinct relapse triggers.
+**Depression × withdrawal**: Depression lowers pain threshold, depletes dopaminergic reward circuitry, and is bidirectionally reinforced by withdrawal severity. In OUD populations, severe withdrawal in a depressed patient predicts opioid escalation and treatment dropout (Sheng et al. 2017; Rhodin et al. 2006). `withdrawal_mean` captures chronic burden; `withdrawal_max` captures acute peak severity as a distinct relapse trigger.
 
-**Anxiety × pain**: Anxiety amplifies pain catastrophizing — independently associated with opioid misuse and worse OUD outcomes. `pain_max` captures the acute worst-case pain event that can trigger hyperarousal-mediated craving.
+**Anxiety × withdrawal**: Anxiety amplifies withdrawal-driven craving through hyperarousal and interoceptive sensitivity. A participant with anxiety disorder who enters treatment with high withdrawal severity faces a compounded craving load.
 
-**Anxiety × benzodiazepine**: Signal is pharmacological risk. Whether benzo use is prescribed (anxiety treatment) or misuse, benzodiazepine + opioid co-use synergistically depresses CNS respiratory drive, dramatically elevating overdose risk (FDA black box warning 2016; Park et al. 2015). `benzodiazepine_days` NA imputed to 0 before multiplying (no use = 0 days).
+**Anxiety × benzodiazepine**: Signal is pharmacological risk. Benzodiazepine + opioid co-use synergistically depresses CNS respiratory drive, dramatically elevating overdose risk (FDA black box warning 2016; Park et al. 2015). `benzodiazepine_days` NA imputed to 0 before multiplying (no use = 0 days).
 
-Confirmatory factors: Pain–depression cycle; anxiety-mediated pain catastrophizing; pharmacological overdose risk profile.
+> **NOTE: withdrawal_mean/withdrawal_max will be all-NA until the `day_zero` window calibration commit.** Only `has_anx_pan_x_benzodiazepine_days` is currently non-NA.
+
+Confirmatory factors: Withdrawal-depression cycle; anxiety-mediated craving amplification; pharmacological overdose risk profile.
 
 ---
 
-# ── 25. Database Notes: Housing stability (cross-dataset) ──────────
+# ── 26. Database Notes: Housing stability (cross-dataset) ──────────
 
 ## demographics × qol
 
@@ -1208,7 +1222,7 @@ Confirmatory factor: Social determinants of health; housing instability as relap
 
 ---
 
-# ── 26. Database Notes: Withdrawal trajectory ─────────────────────
+# ── 27. Database Notes: Withdrawal trajectory ─────────────────────
 
 ## withdrawal
 
@@ -1216,13 +1230,15 @@ Confirmatory factor: Social determinants of health; housing instability as relap
 
 ### Feature proposal: withdrawal trajectory x time
 
-**Slope of withdrawal symptom scores over the -28 to 0 window** (from `withdrawal`). If a participant's withdrawal symptoms are *increasing* in the days before study entry (i.e., escalating dependence), this predicts worse outcomes compared to stable or decreasing withdrawal. A simple linear slope estimated per-person via `lm(score ~ when)` within the window captures this. Increasing withdrawal slope has been associated with higher opioid craving and lower treatment readiness (O'Brien & McLellan 1996).
+**Slope of COWS/SOWS withdrawal scores over the −28 to 0 window** (from `withdrawal`). If a participant's withdrawal symptoms are *increasing* in the days before study entry (escalating dependence), this predicts worse outcomes compared to stable or decreasing withdrawal. Estimated per-person via `lm(score ~ when)` within the window (minimum 2 observations required). Increasing withdrawal slope has been associated with higher opioid craving and lower treatment readiness (O'Brien & McLellan 1996).
+
+> **NOTE: Implementation deferred.** `withdrawal$when` ranges [0, 374]; pre-study window filter captures no data. All-NA until `day_zero` window calibration commit.
 
 Confirmatory factor: Escalating dependence severity
 
 ---
 
-# ── 27. Database Notes: Medication adherence composite ────────────
+# ── 28. Database Notes: Medication adherence composite ────────────
 
 ## Database Notes
 
@@ -1250,9 +1266,9 @@ Confirmatory factor: Responsibility towards health
 
 ---
 
-# ── 28. Final assembly ────────────────────────────────────────────
+# ── 29. Final assembly ────────────────────────────────────────────
 
-<!-- No source-document content maps here. Technical R implementation of the full left_join sequence and NA-fill logic. See building_analysis.R §28. -->
+<!-- No source-document content maps here. Technical R implementation of the full left_join sequence and NA-fill logic. See building_analysis.R §29. -->
 
 ---
 
@@ -1282,4 +1298,4 @@ The following sections from `Features_To_Include_Accepted_Suggestions.Rmd` have 
 
 > ⚠️ **FLAGGED** — `# visit`: Empty stub in original Rmd (header only, no content). No features. No `building_analysis.R` section.
 
-> ⚠️ **FLAGGED** — `# withdrawal` (stub): Empty stub in original Rmd (header only, no content beneath it). The withdrawal trajectory feature proposal originates in the Database Notes section of the original Rmd and is placed in §26 above via that route. The `# withdrawal` header itself had no content.
+> ⚠️ **FLAGGED** — `# withdrawal` (stub): Empty stub in original Rmd (header only, no content beneath it). The withdrawal trajectory feature proposal originates in the Database Notes section of the original Rmd and is placed in §27 above via that route. The `# withdrawal` header itself had no content.
