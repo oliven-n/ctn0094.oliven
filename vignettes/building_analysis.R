@@ -1069,10 +1069,10 @@ feature_list <- list(
   withdrawal_pp_feats,
   study_drug_feats,
   wdl_main_feats,
-  withdrawal_hard_feats,
-  withdrawal_soft_feats,
+  # withdrawal_hard_feats,  # DROPPED — longitudinal data not available; see §22
+  # withdrawal_soft_feats,  # DROPPED — longitudinal data not available; see §23
   psych_cross_feats,
-  withdrawal_traj_feats,
+  # withdrawal_traj_feats,  # DROPPED — longitudinal data not available; see §27
   rx_feats
 )
 
