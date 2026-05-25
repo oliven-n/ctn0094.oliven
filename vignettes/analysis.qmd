@@ -44,7 +44,7 @@ source("building_analysis.R")
 
 # Abstract
 
-This study uses data from three NIDA Clinical Trials Network studies (CTN-0028, CTN-0030, CTN-0051) to build a predictive model of treatment response in people with opioid use disorder (OUD). We construct a pre-treatment feature matrix from behavioral, substance use, demographic, and clinical data in the 28 days before randomization, and evaluate whether these features predict relapse during the treatment period.
+This study uses data from three NIDA Clinical Trials Network studies (CTN-0027, CTN-0030, CTN-0051) to build a predictive model of treatment response in people with opioid use disorder (OUD). We construct a pre-treatment feature matrix from behavioral, substance use, demographic, and clinical data in the 28 days before randomization, and evaluate whether these features predict relapse during the treatment period.
 
 # Introduction
 
@@ -72,23 +72,13 @@ Standard binary logistic regression models the log-odds of relapse as a linear c
 
 ### LASSO
 
-L1-penalized logistic regression (Least Absolute Shrinkage and Selection Operator; Tibshirani, 1996) shrinks coefficients toward zero, performing automatic variable selection. Particularly useful given the high-dimensional feature matrix. The penalty parameter λ is selected via 10-fold cross-validation. Implemented via the `glmnet` engine in `tidymodels`.
-
 ### KNN
-
-K-Nearest Neighbors classifies each observation by majority vote among its K nearest neighbors in feature space (Altman, 1992). Non-parametric; captures local non-linear structure without assuming a functional form. Features must be normalized to unit variance before distance computation. K is selected via cross-validation. Implemented via the `kknn` engine in `tidymodels`.
 
 ### CART
 
-Classification and Regression Trees (Breiman et al., 1984) recursively partition the feature space by binary splits that minimize node impurity (Gini index). The resulting tree is interpretable as a set of if–then decision rules. Tree depth is controlled by cost-complexity pruning; the complexity parameter is selected via cross-validation. Implemented via the `rpart` engine in `tidymodels`.
-
 ### Random Forest
 
-Random forests (Breiman, 2001) aggregate predictions from a large number of decorrelated decision trees, each trained on a bootstrap sample with a random subset of features at each split. The ensemble substantially reduces variance relative to a single tree. Number of trees, features per split, and minimum node size are tuned via cross-validation. Implemented via the `ranger` engine in `tidymodels`.
-
 ### Boosted Trees
-
-Gradient boosted trees (Friedman, 2001; Chen & Guestrin, 2016) build an additive ensemble by sequentially fitting trees to the residuals of the current ensemble. Typically achieves high predictive accuracy but requires careful regularization (learning rate, tree depth, subsampling fraction) to prevent overfitting. Hyperparameters tuned via cross-validation. Implemented via the `xgboost` engine in `tidymodels`.
 
 ## Software
 
