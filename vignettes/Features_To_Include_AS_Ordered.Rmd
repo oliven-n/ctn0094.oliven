@@ -1081,30 +1081,25 @@ What are the study drugs?
 
 ---
 
-# ── 21. Withdrawal: main effect (windowed aggregates) ─────────────
+# ── 21. Withdrawal: baseline scalar ──────────────────────────────
 
-## withdrawal
+## withdrawal_pre_post
 
 ### Dataset Notes
 
 ```{r withdrawal-overview}
-glimpse(withdrawal)
+glimpse(withdrawal_pre_post)
 ```
 
-`withdrawal` (COWS/SOWS daily severity) is the longitudinal daily variable for this feature set — the role pain was incorrectly proposed to fill. CTN-0027/0030 use COWS; CTN-0051 uses SOWS. Factor levels: 0=None, 1=mild, 2=moderate, 3=severe.
+`withdrawal_pre_post |> filter(what == "pre")` contains exactly one pre-induction COWS/SOWS observation per participant — the baseline severity score before the first MOUD dose. CTN-0027/0030 use COWS; CTN-0051 uses SOWS. Factor levels: 0=None, 1=mild, 2=moderate, 3=severe.
 
-`withdrawal$when` ranges [0, 374] — currently all post-randomization. All features here will be all-NA until the `day_zero` window calibration commit (see top-of-file critical warning in §19).
+This is a scalar baseline measure, not a daily longitudinal variable. Treated identically to `pain_score` (§12).
 
 #### Feature proposal
 
-Four aggregate features over the pre-study window (same pattern as old pain aggregates):
+- **`withdrawal_pre_score`**: Pre-induction COWS/SOWS severity (0=None, 1=mild, 2=moderate, 3=severe). One row per person from `withdrawal_pre_post` "pre" records.
 
-- **`withdrawal_mean`**: mean COWS/SOWS score across window days.
-- **`withdrawal_max`**: peak severity in window.
-- **`wdl_pct_days_severe`**: proportion of days at severe (score = 3).
-- **`wdl_pct_days_any`**: proportion of days with any withdrawal (score > 0).
-
-> **NOTE: Implementation deferred.** `withdrawal$when` ranges [0, 374]; pre-study window filter captures no data currently. All-NA until `day_zero` window calibration commit.
+> **NOTE: windowed longitudinal aggregates dropped.** `withdrawal_pre_post` contains exactly 1 "pre" obs per person; windowed aggregates (mean, max, pct days severe/any) collapse to this scalar and add no information. Code retained in §21 as comments for reference.
 
 ---
 
@@ -1122,7 +1117,7 @@ Hypothesis: participants who use more HARD drugs on the days they are experienci
 
 **Feature 2 — `withdrawal_highrisk_harddrug_rate`**: Among days where the person's withdrawal score exceeds their own median for the window, the proportion of those days that also had hard drug use. Directly operationalises "self-medicating high-withdrawal days."
 
-> **NOTE: Implementation deferred.** `withdrawal$when` ranges [0, 374]; pre-study window filter captures no data currently. All-NA until `day_zero` window calibration commit.
+> ~~**NOTE: Implementation deferred.**~~ **DROPPED.** Correlation features require ≥2 longitudinal observations per person per window. `withdrawal_pre_post` contains exactly 1 "pre" observation per person. Code retained in §22 as comments for reference.
 
 Confirmatory factor: Self-medication tendency
 
@@ -1143,7 +1138,7 @@ Apply the same two-feature operationalisation as withdrawal × hard drugs above:
 - **`withdrawal_softdrug_corr`**: Pearson correlation between daily withdrawal score and daily soft-drug binary across the pre-study window. Expect negative (protective direction).
 - **`withdrawal_highrisk_softdrug_rate`**: Proportion of above-personal-median withdrawal days on which any soft drug was used. Protective-substitution indicated by higher rate being associated with lower relapse risk.
 
-> **NOTE: Implementation deferred.** Same window anchor issue as §22. `withdrawal$when` ranges [0, 374]; pre-study filter captures nothing. All-NA until `day_zero` calibration commit. `withdrawal_numeric` defined in §22's commented block — uncomment both sections together.
+> ~~**NOTE: Implementation deferred.**~~ **DROPPED.** Same reason as §22 — single observation per person makes correlation undefined. Code retained in §23 as comments.
 
 Confirmatory factor: Self-medication tendency
 
@@ -1175,23 +1170,21 @@ Confirmatory factor: Denial/minimization of primary drug of abuse
 
 #### Feature proposal
 
-Five interaction features computed in `psych_cross_feats` from §13 (`psych_feats`), §21 (`wdl_main_feats`), and §5 (`drug_feats`). Pain scalar interactions removed — `pain_score × has_major_dep` etc. are near-collinear with the psychiatric binary itself and add no information beyond the main effect.
+Three interaction features computed in `psych_cross_feats` from §13 (`psych_feats`), §21 (`wdl_main_feats`), and §5 (`drug_feats`). Pain scalar interactions removed — `pain_score × has_major_dep` etc. are near-collinear with the psychiatric binary itself and add no information beyond the main effect.
 
-| Feature | Formula | Construct |
+| Feature | Formula | Clinical rationale |
 |---|---|---|
-| `has_major_dep_x_withdrawal_mean` | `has_major_dep × withdrawal_mean` | Depression × chronic withdrawal burden |
-| `has_major_dep_x_withdrawal_max` | `has_major_dep × withdrawal_max` | Depression × peak acute withdrawal |
-| `has_anx_pan_x_withdrawal_mean` | `has_anx_pan × withdrawal_mean` | Anxiety × chronic withdrawal (craving amplification) |
-| `has_anx_pan_x_withdrawal_max` | `has_anx_pan × withdrawal_max` | Anxiety × acute peak withdrawal |
+| `has_major_dep_x_withdrawal_pre_score` | `has_major_dep × withdrawal_pre_score` | Depression × baseline withdrawal severity |
+| `has_anx_pan_x_withdrawal_pre_score` | `has_anx_pan × withdrawal_pre_score` | Anxiety × baseline withdrawal severity |
 | `has_anx_pan_x_benzodiazepine_days` | `has_anx_pan × benzodiazepine_days` | Anxiety + benzo co-use = elevated pharmacological overdose risk |
 
-**Depression × withdrawal**: Depression lowers pain threshold, depletes dopaminergic reward circuitry, and is bidirectionally reinforced by withdrawal severity. In OUD populations, severe withdrawal in a depressed patient predicts opioid escalation and treatment dropout (Sheng et al. 2017; Rhodin et al. 2006). `withdrawal_mean` captures chronic burden; `withdrawal_max` captures acute peak severity as a distinct relapse trigger.
+`withdrawal_mean`/`withdrawal_max` collapsed to `withdrawal_pre_score` (single baseline observation per person — see §21 note). Two interaction columns instead of four.
+
+**Depression × withdrawal**: Depression lowers pain threshold, depletes dopaminergic reward circuitry, and is bidirectionally reinforced by withdrawal severity. In OUD populations, severe withdrawal in a depressed patient predicts opioid escalation and treatment dropout (Sheng et al. 2017; Rhodin et al. 2006).
 
 **Anxiety × withdrawal**: Anxiety amplifies withdrawal-driven craving through hyperarousal and interoceptive sensitivity. A participant with anxiety disorder who enters treatment with high withdrawal severity faces a compounded craving load.
 
 **Anxiety × benzodiazepine**: Signal is pharmacological risk. Benzodiazepine + opioid co-use synergistically depresses CNS respiratory drive, dramatically elevating overdose risk (FDA black box warning 2016; Park et al. 2015). `benzodiazepine_days` NA imputed to 0 before multiplying (no use = 0 days).
-
-> **NOTE: withdrawal_mean/withdrawal_max will be all-NA until the `day_zero` window calibration commit.** Only `has_anx_pan_x_benzodiazepine_days` is currently non-NA.
 
 Confirmatory factors: Withdrawal-depression cycle; anxiety-mediated craving amplification; pharmacological overdose risk profile.
 
@@ -1232,7 +1225,7 @@ Confirmatory factor: Social determinants of health; housing instability as relap
 
 **Slope of COWS/SOWS withdrawal scores over the −28 to 0 window** (from `withdrawal`). If a participant's withdrawal symptoms are *increasing* in the days before study entry (escalating dependence), this predicts worse outcomes compared to stable or decreasing withdrawal. Estimated per-person via `lm(score ~ when)` within the window (minimum 2 observations required). Increasing withdrawal slope has been associated with higher opioid craving and lower treatment readiness (O'Brien & McLellan 1996).
 
-> **NOTE: Implementation deferred.** `withdrawal$when` ranges [0, 374]; pre-study window filter captures no data. All-NA until `day_zero` window calibration commit.
+> **DROPPED.** Slope estimation via `lm(score ~ when)` requires ≥2 observations per person. `withdrawal_pre_post` contains exactly 1 "pre" observation per person. Code retained in §27 as comments for reference.
 
 Confirmatory factor: Escalating dependence severity
 
