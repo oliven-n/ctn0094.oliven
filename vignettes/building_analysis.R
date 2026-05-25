@@ -7,30 +7,15 @@
 # decisions). No outcome variable — relapse labels will be joined
 # separately at modelling time.
 #
-# Window for all longitudinal data: days -28 (inclusive) to 0
-# (exclusive). Gives exactly 4 of each weekday per person.
+# ── Window anchor ─────────────────────────────────────────────────
+# All longitudinal filters use a per-person window:
+#   when >= day_zero - 28  (inclusive)  to  when < day_zero
+# where day_zero comes from screening_date$day_zero ("best guess at
+# end of TLFB", relative to randomization). Participants absent from
+# screening_date default to day_zero = 0 (randomization anchor).
 #
-# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-# NOTE TO NAT — CRITICAL: WINDOW ANCHOR MAY BE WRONG
-#
-# ALL longitudinal filters in this file use when >= -28 & when < 0,
-# anchored to randomization (day 0). But induction (first MOUD dose)
-# happens AFTER randomization — participants may be enrolled for days
-# before receiving their first dose. Data in the [0, induction_day)
-# range is pre-treatment baseline that we are currently DISCARDING.
-#
-# If the window should be anchored to induction rather than
-# randomization, every filter(when >= -28, when < 0) in this file
-# is wrong. This affects §5 (all_drugs), pain, rbs_iv, and every
-# other longitudinal section.
-#
-# We do NOT have a direct induction date per participant. It could
-# potentially be inferred from withdrawal_pre_post: the minimum
-# positive `when` where what == "pre", or the transition point
-# pre → post — but this has not been verified. See §19.
-#
-# Resolve with Dr. Balise before modelling. See both .Rmd files §19.
-# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+# Open question for Dr. Balise (see §19): should the window instead
+# be anchored to induction date? We do not have induction date directly.
 #
 # SOURCED BY: vignettes/analysis.qmd
 # Sections marked TODO return a who-only tibble until column names
@@ -138,16 +123,30 @@ glimpse(all_drugs_grouped)
 # # Returns: TRUE because the above just compares elements
 
 
-# Primary filter: window + >= 10 events per category
-drugs_to_keep <- all_drugs_grouped |>
-  filter(when < 0, when >= -28) |>
+# Per-person TLFB window anchor.
+# day_zero = "best guess at end of TLFB" per participant (from screening_date).
+# Participants absent from screening_date default to day_zero = 0 (randomization).
+day_zero_lookup <- screening_date |>
+  select(who, day_zero) |>
+  mutate(day_zero = replace_na(day_zero, 0L))
+
+# Attach day_zero to all_drugs_grouped for per-person window filtering.
+# Participants not in screening_date get day_zero = 0 via replace_na.
+all_drugs_windowed <- all_drugs_grouped |>
+  left_join(day_zero_lookup, by = "who") |>
+  mutate(day_zero = replace_na(day_zero, 0L))
+
+# Primary filter: per-person window + >= 10 events per category.
+# Window: [day_zero - 28, day_zero) — 28 days up to but not including day_zero.
+drugs_to_keep <- all_drugs_windowed |>
+  filter(when >= day_zero - 28, when < day_zero) |>
   count(what_grouped) |>
   filter(n >= 10) |>
   pull(what_grouped) |>
   unname()
 
-all_drugs_filtered <- all_drugs_grouped |>
-  filter(when < 0, when >= -28) |>
+all_drugs_filtered <- all_drugs_windowed |>
+  filter(when >= day_zero - 28, when < day_zero) |>
   filter(what_grouped %in% drugs_to_keep)
 
 # Secondary filter: remove <1% users. NOT in effect yet.
@@ -760,34 +759,22 @@ study_drug_feats <- analysis_base |>
 #   wdl_pct_days_severe  — proportion of days at severe (score == 3)
 #   wdl_pct_days_any     — proportion of days with any withdrawal (score > 0)
 #
-# NOTE TO NAT — IMPLEMENTATION DEFERRED:
-# withdrawal$when ranges [0, 374]. The pre-study window filter
-# (when >= -28 & when < 0) captures no withdrawal data under the current
-# anchor. All features will be all-NA until the day_zero window calibration
-# commit. DO NOT change the filter here — that is a separate commit.
+# Window: per-person [day_zero - 28, day_zero). withdrawal$when is [0, 374];
+# participants with day_zero > 0 will have non-NA aggregates here.
 
-wdl_main_feats <- analysis_base |>
-  select(who) |>
-  mutate(
-    # NOTE TO NAT: remove these NA placeholders and uncomment the full
-    # implementation below the moment withdrawal window data is available.
-    withdrawal_mean     = NA_real_,
-    withdrawal_max      = NA_real_,
-    wdl_pct_days_severe = NA_real_,
-    wdl_pct_days_any    = NA_real_
+wdl_main_feats <- withdrawal |>
+  mutate(score = as.integer(as.character(withdrawal))) |>
+  left_join(day_zero_lookup, by = "who") |>
+  mutate(day_zero = replace_na(day_zero, 0L)) |>
+  filter(when >= day_zero - 28, when < day_zero) |>
+  group_by(who) |>
+  summarize(
+    withdrawal_mean     = mean(score, na.rm = TRUE),
+    withdrawal_max      = max(score,  na.rm = TRUE),
+    wdl_pct_days_severe = mean(score == 3, na.rm = TRUE),
+    wdl_pct_days_any    = mean(score  > 0, na.rm = TRUE),
+    .groups = "drop"
   )
-
-# wdl_main_feats <- withdrawal |>
-#   mutate(score = as.integer(as.character(withdrawal))) |>
-#   filter(when >= -28, when < 0) |>
-#   group_by(who) |>
-#   summarize(
-#     withdrawal_mean     = mean(score, na.rm = TRUE),
-#     withdrawal_max      = max(score,  na.rm = TRUE),
-#     wdl_pct_days_severe = mean(score == 3, na.rm = TRUE),
-#     wdl_pct_days_any    = mean(score  > 0, na.rm = TRUE),
-#     .groups = "drop"
-#   )
 
 
 # ── 22. Database Notes: Withdrawal × hard drug interaction ────────
@@ -805,56 +792,51 @@ wdl_main_feats <- analysis_base |>
 # core self-medication pathway. Does NOT include MOUD (Buprenorphine/
 # Suboxone/Methadone are separate pass-through categories in what_grouped).
 #
-# NOTE TO NAT — IMPLEMENTATION DEFERRED:
-# withdrawal$when ranges [0, 374]. The pre-study window filter
-# (when >= -28 & when < 0) captures no withdrawal data under the current
-# anchor. Features will be all-NA until the day_zero window calibration
-# commit. DO NOT change the filter here — that is a separate commit.
+# Window: per-person [day_zero - 28, day_zero) via all_drugs_windowed and day_zero_lookup.
+# withdrawal_numeric defined here is reused in §23 — these sections run together.
 
 hard_drug_cats <- c(
   "Heroin", "Fentanyl", "Cocaine", "Crack",
   "Methamphetamine", "Amphetamine", "Opioid"
 )
 
-withdrawal_hard_feats <- analysis_base |> select(who)
+# Like all_drugs_filtered but WITHOUT the >=10 primary filter — that filter
+# was designed for standalone drug count features (§5), not for a daily
+# binary flag where even a single rare event is meaningful.
+hard_drug_days_flag <- all_drugs_windowed |>
+  filter(when >= day_zero - 28, when < day_zero,
+         as.character(what_grouped) %in% hard_drug_cats) |>
+  distinct(who, when) |>
+  mutate(harddrug_use = 1L)
 
-# # Full implementation — uncomment after day_zero window calibration:
-# #
-# # Like all_drugs_filtered but WITHOUT the >=10 primary filter — that filter
-# # was designed for standalone drug count features (§5), not for a daily
-# # binary flag where even a single rare event is meaningful.
-# hard_drug_days_flag <- all_drugs_grouped |>
-#   filter(when >= -28, when < 0,
-#          as.character(what_grouped) %in% hard_drug_cats) |>
-#   distinct(who, when) |>
-#   mutate(harddrug_use = 1L)
-#
-# # withdrawal is an ordered factor: 0=None, 1=mild, 2=moderate, 3=severe.
-# withdrawal_numeric <- withdrawal |>
-#   mutate(score = as.integer(as.character(withdrawal))) |>
-#   filter(when >= -28, when < 0) |>
-#   transmute(who, when, withdrawal_score = score)
-#
-# withdrawal_hard_feats <- withdrawal_numeric |>
-#   left_join(hard_drug_days_flag, by = c("who", "when")) |>
-#   mutate(harddrug_use = replace_na(harddrug_use, 0L)) |>
-#   group_by(who) |>
-#   summarize(
-#     withdrawal_harddrug_corr = {
-#       nd <- sum(harddrug_use)
-#       if (nd == 0L) 0
-#       else if (nd == n()) NA_real_
-#       else suppressWarnings(cor(withdrawal_score, harddrug_use, use = "complete.obs"))
-#     },
-#     withdrawal_highrisk_harddrug_rate = {
-#       med <- median(withdrawal_score, na.rm = TRUE)
-#       high_wdl_days <- withdrawal_score > med
-#       if (sum(high_wdl_days, na.rm = TRUE) == 0L) NA_real_
-#       else mean(harddrug_use[high_wdl_days], na.rm = TRUE)
-#     },
-#     .groups = "drop"
-#   ) |>
-#   transmute(who, withdrawal_harddrug_corr, withdrawal_highrisk_harddrug_rate)
+# withdrawal is an ordered factor: 0=None, 1=mild, 2=moderate, 3=severe.
+withdrawal_numeric <- withdrawal |>
+  mutate(score = as.integer(as.character(withdrawal))) |>
+  left_join(day_zero_lookup, by = "who") |>
+  mutate(day_zero = replace_na(day_zero, 0L)) |>
+  filter(when >= day_zero - 28, when < day_zero) |>
+  transmute(who, when, withdrawal_score = score)
+
+withdrawal_hard_feats <- withdrawal_numeric |>
+  left_join(hard_drug_days_flag, by = c("who", "when")) |>
+  mutate(harddrug_use = replace_na(harddrug_use, 0L)) |>
+  group_by(who) |>
+  summarize(
+    withdrawal_harddrug_corr = {
+      nd <- sum(harddrug_use)
+      if (nd == 0L) 0
+      else if (nd == n()) NA_real_
+      else suppressWarnings(cor(withdrawal_score, harddrug_use, use = "complete.obs"))
+    },
+    withdrawal_highrisk_harddrug_rate = {
+      med <- median(withdrawal_score, na.rm = TRUE)
+      high_wdl_days <- withdrawal_score > med
+      if (sum(high_wdl_days, na.rm = TRUE) == 0L) NA_real_
+      else mean(harddrug_use[high_wdl_days], na.rm = TRUE)
+    },
+    .groups = "drop"
+  ) |>
+  transmute(who, withdrawal_harddrug_corr, withdrawal_highrisk_harddrug_rate)
 
 
 # ── 23. Database Notes: Withdrawal × soft drug interaction ────────
@@ -867,44 +849,38 @@ withdrawal_hard_feats <- analysis_base |> select(who)
 # Caffeine removed — not present in all_drugs_grouped within the window.
 # Alcohol Heavy Amnt excluded (not a "soft" use pattern).
 #
-# NOTE TO NAT — IMPLEMENTATION DEFERRED: same window anchor issue as §22.
-# withdrawal$when ranges [0, 374]; pre-study filter captures nothing currently.
-# DO NOT change the filter — that is a separate day_zero calibration commit.
+# Window: per-person [day_zero - 28, day_zero) via all_drugs_windowed.
+# Depends on withdrawal_numeric defined in §22 — run §22 first.
 
 soft_drug_cats <- c("Cannabinoids", "Alcohol Light Amnt")
 
-withdrawal_soft_feats <- analysis_base |> select(who)
+# Like all_drugs_filtered but WITHOUT the >=10 primary filter (see §22 note).
+soft_drug_days_flag <- all_drugs_windowed |>
+  filter(when >= day_zero - 28, when < day_zero,
+         as.character(what_grouped) %in% soft_drug_cats) |>
+  distinct(who, when) |>
+  mutate(softdrug_use = 1L)
 
-# # Full implementation — uncomment after day_zero window calibration:
-# #
-# # Like all_drugs_filtered but WITHOUT the >=10 primary filter (see §22 note).
-# # withdrawal_numeric is defined in §22's commented block — uncomment both together.
-# soft_drug_days_flag <- all_drugs_grouped |>
-#   filter(when >= -28, when < 0,
-#          as.character(what_grouped) %in% soft_drug_cats) |>
-#   distinct(who, when) |>
-#   mutate(softdrug_use = 1L)
-#
-# withdrawal_soft_feats <- withdrawal_numeric |>
-#   left_join(soft_drug_days_flag, by = c("who", "when")) |>
-#   mutate(softdrug_use = replace_na(softdrug_use, 0L)) |>
-#   group_by(who) |>
-#   summarize(
-#     withdrawal_softdrug_corr = {
-#       nd <- sum(softdrug_use)
-#       if (nd == 0L) 0
-#       else if (nd == n()) NA_real_
-#       else suppressWarnings(cor(withdrawal_score, softdrug_use, use = "complete.obs"))
-#     },
-#     withdrawal_highrisk_softdrug_rate = {
-#       med <- median(withdrawal_score, na.rm = TRUE)
-#       high_wdl_days <- withdrawal_score > med
-#       if (sum(high_wdl_days, na.rm = TRUE) == 0L) NA_real_
-#       else mean(softdrug_use[high_wdl_days], na.rm = TRUE)
-#     },
-#     .groups = "drop"
-#   ) |>
-#   transmute(who, withdrawal_softdrug_corr, withdrawal_highrisk_softdrug_rate)
+withdrawal_soft_feats <- withdrawal_numeric |>
+  left_join(soft_drug_days_flag, by = c("who", "when")) |>
+  mutate(softdrug_use = replace_na(softdrug_use, 0L)) |>
+  group_by(who) |>
+  summarize(
+    withdrawal_softdrug_corr = {
+      nd <- sum(softdrug_use)
+      if (nd == 0L) 0
+      else if (nd == n()) NA_real_
+      else suppressWarnings(cor(withdrawal_score, softdrug_use, use = "complete.obs"))
+    },
+    withdrawal_highrisk_softdrug_rate = {
+      med <- median(withdrawal_score, na.rm = TRUE)
+      high_wdl_days <- withdrawal_score > med
+      if (sum(high_wdl_days, na.rm = TRUE) == 0L) NA_real_
+      else mean(softdrug_use[high_wdl_days], na.rm = TRUE)
+    },
+    .groups = "drop"
+  ) |>
+  transmute(who, withdrawal_softdrug_corr, withdrawal_highrisk_softdrug_rate)
 
 
 
@@ -1019,20 +995,18 @@ housing_stability_feats <- analysis_base |>
 # Estimated per person via simple linear regression: score ~ when.
 # Requires >= 2 observations per participant in the window.
 #
-# NOTE TO NAT — IMPLEMENTATION DEFERRED:
-# withdrawal$when ranges [0, 374]; pre-study filter captures nothing currently.
-# DO NOT change the filter — that is a separate day_zero calibration commit.
+# Window: per-person [day_zero - 28, day_zero). Requires >= 2 obs per participant.
 
-withdrawal_traj_feats <- analysis_base |> select(who)
-
-# withdrawal_traj_feats <- withdrawal |>
-#   mutate(score = as.integer(as.character(withdrawal))) |>
-#   filter(when >= -28, when < 0) |>
-#   group_by(who) |>
-#   summarize(
-#     withdrawal_slope = if (n() >= 2L) coef(lm(score ~ when))[["when"]] else NA_real_,
-#     .groups = "drop"
-#   )
+withdrawal_traj_feats <- withdrawal |>
+  mutate(score = as.integer(as.character(withdrawal))) |>
+  left_join(day_zero_lookup, by = "who") |>
+  mutate(day_zero = replace_na(day_zero, 0L)) |>
+  filter(when >= day_zero - 28, when < day_zero) |>
+  group_by(who) |>
+  summarize(
+    withdrawal_slope = if (n() >= 2L) coef(lm(score ~ when))[["when"]] else NA_real_,
+    .groups = "drop"
+  )
 
 
 # ── 28. Database Notes: Medication adherence composite ────────────
