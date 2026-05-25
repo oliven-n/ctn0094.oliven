@@ -988,20 +988,23 @@ housing_stability_feats <- analysis_base |>
 # Slope of COWS/SOWS withdrawal scores over the pre-study window.
 # Positive slope = worsening withdrawal = escalating dependence before entry.
 # Estimated per person via simple linear regression: score ~ when.
-# Requires >= 2 observations per participant in the window.
 #
 # Window: per-person [day_zero - 28, day_zero). Requires >= 2 obs per participant.
+# DROPPED — withdrawal_pre_post has exactly 1 "pre" obs per person; lm() on
+# a single point is undefined. Kept for reference.
 
-withdrawal_traj_feats <- withdrawal |>
-  mutate(score = as.integer(as.character(withdrawal))) |>
-  left_join(day_zero_lookup, by = "who") |>
-  mutate(day_zero = replace_na(day_zero, 0L)) |>
-  filter(when >= day_zero - 28, when < day_zero) |>
-  group_by(who) |>
-  summarize(
-    withdrawal_slope = if (n() >= 2L) coef(lm(score ~ when))[["when"]] else NA_real_,
-    .groups = "drop"
-  )
+withdrawal_traj_feats <- analysis_base |> select(who)
+
+# # withdrawal_traj_feats <- withdrawal |>
+# #   mutate(score = as.integer(as.character(withdrawal))) |>
+# #   left_join(day_zero_lookup, by = "who") |>
+# #   mutate(day_zero = replace_na(day_zero, 0L)) |>
+# #   filter(when >= day_zero - 28, when < day_zero) |>
+# #   group_by(who) |>
+# #   summarize(
+# #     withdrawal_slope = if (n() >= 2L) coef(lm(score ~ when))[["when"]] else NA_real_,
+# #     .groups = "drop"
+# #   )
 
 
 # ── 28. Database Notes: Medication adherence composite ────────────
