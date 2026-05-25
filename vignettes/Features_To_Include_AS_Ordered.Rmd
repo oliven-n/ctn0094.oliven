@@ -864,19 +864,45 @@ glimpse(psychiatric)
 
 #### Feature proposal
 
-**Depression diagnosis / score**: Whether the participant meets criteria for a depressive disorder (or a continuous depression symptom score if available). Depression is the single most replicated psychiatric predictor of OUD relapse (Nunes & Levin 2004; Kidorf et al. 2004). Co-occurring depression cuts abstinence rates roughly in half in MOUD trials.
+The `psychiatric` dataset provides 18 features. All Yes/No flags are encoded 0/1; NA = not assessed.
 
-#### Feature proposal
+**Medical history diagnosis flags** (from clinical interview):
 
-**Anxiety disorder binary**: Whether the participant has a current anxiety disorder (generalized anxiety, panic, social anxiety). Anxiety comorbidity predicts worse outcomes particularly for XR-NTX, where early discontinuation due to side effects is more common in anxious patients (Lee et al. 2018).
+| Feature | Condition | Notes |
+|---|---|---|
+| `has_schizophrenia` | Schizophrenia | |
+| `has_major_dep` | Major depression | Strongest psychiatric predictor of OUD relapse (Nunes & Levin 2004) |
+| `has_bipolar` | Bipolar disorder | |
+| `has_anx_pan` | Anxiety / panic disorder | Predicts worse XR-NTX outcomes (Lee et al. 2018) |
+| `has_brain_damage` | Brain damage | |
+| `has_epilepsy` | Epilepsy | |
 
-#### Feature proposal
+**DSM substance use disorder diagnoses:**
 
-**PTSD binary**: Post-traumatic stress disorder diagnosis. PTSD is uniquely predictive of opioid relapse beyond general anxiety (Yule et al. 2018; Back et al. 2014), especially among women, and the mechanism (hyperarousal → craving) is well-established. Given the high trauma burden in OUD populations, this is a high-confidence inclusion.
+| Feature | Condition |
+|---|---|
+| `has_opiates_dx` | Opioid use disorder (DSM-IV/5) |
+| `has_alcol_dx` | Alcohol use disorder |
+| `has_amphetamines_dx` | Amphetamine-type SUD |
+| `has_cannabis_dx` | Cannabis use disorder |
+| `has_cocaine_dx` | Cocaine use disorder |
+| `has_sedatives_dx` | Sedative/hypnotic/anxiolytic SUD |
 
-#### Feature proposal
+**ASI self-report items** (Yes → 1, No → 0, "Not answered" / "Missing" → NA):
 
-**Total psychiatric comorbidity count**: Number of distinct psychiatric diagnoses at baseline (integer). Higher comorbidity load predicts worse treatment outcomes across all three study medications and serves as a useful summary variable when individual diagnoses are sparse (Watkins et al. 2011).
+| Feature | ASI Item |
+|---|---|
+| `depression_binary` | P4: Serious depression / sadness / hopelessness / difficulty functioning |
+| `anxiety_binary` | P5: Serious anxiety / tension / inability to relax |
+| `schizophrenia_binary` | P6: Hallucinations |
+
+**Derived:**
+
+- **`psych_comorbidity_count`**: sum of the 6 medical history flags. Captures total psychiatric burden; higher load predicts worse OUD treatment outcomes (Watkins et al. 2011).
+- **`substance_dx_count`**: sum of the 5 non-opioid SUD diagnoses (`has_opiates_dx` excluded — near-universal in this sample). Captures polysubstance disorder burden.
+- **`dep_or_anx_binary`**: 1 if `depression_binary == 1` OR `anxiety_binary == 1`. The internalizing comorbidity cluster is the most replicated psychiatric predictor of OUD relapse; co-occurring depression roughly halves abstinence rates in MOUD trials (Nunes & Levin 2004).
+
+Cross-dataset interactions (psychiatric × pain, psychiatric × benzodiazepine) are in §23.
 
 ---
 
@@ -1059,7 +1085,33 @@ Confirmatory factor: Self-medication tendency
 
 ---
 
-# ── 23. Database Notes: Withdrawal trajectory ─────────────────────
+# ── 23. Database Notes: Psychiatric × pain and psychiatric × drug interactions ──
+
+## psychiatric × pain_main_feats × drug_feats
+
+#### Feature proposal
+
+Five interaction features computed in `psych_cross_feats` after §13 (`psych_feats`), §12 (`pain_main_feats`), and §5 (`drug_feats`) all exist.
+
+| Feature | Formula | Construct |
+|---|---|---|
+| `has_major_dep_x_pain_mean` | `has_major_dep × pain_mean` | Depression × chronic pain burden |
+| `has_major_dep_x_pain_max` | `has_major_dep × pain_max` | Depression × acute severe pain episodes |
+| `has_anx_pan_x_pain_mean` | `has_anx_pan × pain_mean` | Anxiety × chronic pain (catastrophizing) |
+| `has_anx_pan_x_pain_max` | `has_anx_pan × pain_max` | Anxiety × acute severe pain |
+| `has_anx_pan_x_benzodiazepine_days` | `has_anx_pan × benzodiazepine_days` | Anxiety + benzo co-use = elevated pharmacological overdose risk |
+
+**Depression × pain**: The depression–chronic pain cycle is among the best-documented self-medication pathways in OUD. Depression lowers pain threshold and depletes dopaminergic reward circuitry, while chronic pain exacerbates depressive symptoms — a bidirectional reinforcing cycle (Sheng et al. 2017). In OUD populations this predicts opioid escalation and treatment dropout (Rhodin et al. 2006; Sullivan et al. 2006). `pain_mean` captures chronic burden; `pain_max` captures acute severe episodes as distinct relapse triggers.
+
+**Anxiety × pain**: Anxiety amplifies pain catastrophizing — independently associated with opioid misuse and worse OUD outcomes. `pain_max` captures the acute worst-case pain event that can trigger hyperarousal-mediated craving.
+
+**Anxiety × benzodiazepine**: Signal is pharmacological risk. Whether benzo use is prescribed (anxiety treatment) or misuse, benzodiazepine + opioid co-use synergistically depresses CNS respiratory drive, dramatically elevating overdose risk (FDA black box warning 2016; Park et al. 2015). `benzodiazepine_days` NA imputed to 0 before multiplying (no use = 0 days).
+
+Confirmatory factors: Pain–depression cycle; anxiety-mediated pain catastrophizing; pharmacological overdose risk profile.
+
+---
+
+# ── 24. Database Notes: Withdrawal trajectory ─────────────────────
 
 ## withdrawal
 
@@ -1073,7 +1125,7 @@ Confirmatory factor: Escalating dependence severity
 
 ---
 
-# ── 24. Database Notes: Medication adherence composite ────────────
+# ── 25. Database Notes: Medication adherence composite ────────────
 
 ## Database Notes
 
@@ -1101,7 +1153,7 @@ Confirmatory factor: Responsibility towards health
 
 ---
 
-# ── 25. Final assembly ────────────────────────────────────────────
+# ── 26. Final assembly ────────────────────────────────────────────
 
 <!-- No source-document content maps here. Technical R implementation of the full left_join sequence and NA-fill logic. See building_analysis.R §25. -->
 
