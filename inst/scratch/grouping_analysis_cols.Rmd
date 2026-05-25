@@ -1,0 +1,570 @@
+---
+title: "Column Grouping Audit — analysis_tibble"
+author: "Nat Oliven"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+# Setup
+
+Run from project root (`ctn0094.oliven.Rproj`). Sources `building_analysis.R` if
+`analysis_tibble` isn't already in the environment.
+
+```{r setup, message=FALSE, warning=FALSE}
+library(here)  # finds project root regardless of where this Rmd lives
+if (!exists("analysis_tibble")) {
+  library(conflicted)
+  suppressPackageStartupMessages(library(tidymodels))
+  tidymodels_prefer()
+  suppressPackageStartupMessages(library(tidyverse))
+  library(public.ctn0094data)
+  conflicts_prefer(dplyr::filter)
+  options(dplyr.summarise.inform = FALSE)
+  source(here("vignettes/building_analysis.R"))
+}
+library(knitr)
+```
+
+---
+
+# Batch Audit — All 115 Columns
+
+**Primary output for Claude.** Saves `inst/scratch/col_audit_output.csv`. Run this
+document once; Claude reads that file — no sequential back-and-forth needed.
+
+```{r batch-audit}
+col_audit <- analysis_tibble |>
+  map_dfr(\(x) tibble(
+    r_type     = paste(class(x), collapse = "/"),
+    n_na       = sum(is.na(x)),
+    pct_na     = round(mean(is.na(x)) * 100, 1),
+    n_distinct = n_distinct(x, na.rm = TRUE),
+    min_val    = if (is.numeric(x)) min(x, na.rm = TRUE) else NA_real_,
+    max_val    = if (is.numeric(x)) max(x, na.rm = TRUE) else NA_real_,
+    levels_str = if (is.factor(x)) paste(levels(x), collapse = " | ") else NA_character_
+  ), .id = "column_name")
+
+write_csv(col_audit, here("inst/scratch/col_audit_output.csv"))
+col_audit |> kable(digits = 1)
+```
+
+---
+
+# Spot Checks for Uncertain Columns
+
+## Potential Zero-Variance Columns
+
+Glimpse shows all-same values for several columns. ZV columns are useless to the
+model and will be caught by `step_zv()`, but good to know ahead of time.
+
+```{r zv-check}
+zv_candidates <- c("heroin_binary", "heroin_days", "is_smoker", "has_opiates_dx")
+
+map_dfr(zv_candidates, \(col) {
+  x <- analysis_tibble[[col]]
+  tibble(
+    column     = col,
+    n_distinct = n_distinct(x),
+    pct_mode   = round(max(table(x, useNA = "no")) / length(x) * 100, 1)
+  )
+}) |> kable()
+```
+
+## Redundancy Checks
+
+### withdrawal_pre vs withdrawal_pre_score
+
+Both appear to be the same pre-induction withdrawal severity scalar. If identical,
+keep `withdrawal_pre_score` (the engineered version from §21) and drop `withdrawal_pre`.
+
+```{r redundancy-withdrawal}
+cat("Identical?\n")
+print(identical(analysis_tibble$withdrawal_pre, analysis_tibble$withdrawal_pre_score))
+cat("\nCorrelation:\n")
+print(cor(analysis_tibble$withdrawal_pre, analysis_tibble$withdrawal_pre_score,
+          use = "complete.obs"))
+cat("\nCrosstab (should be diagonal if identical):\n")
+print(table(analysis_tibble$withdrawal_pre, analysis_tibble$withdrawal_pre_score,
+            useNA = "always"))
+```
+
+### depression_binary / anxiety_binary / schizophrenia_binary vs has_* flags
+
+These may be from different sources (e.g., ASI self-report vs SCID diagnosis).
+If identical → one is redundant. If different → both add information.
+
+```{r redundancy-psych}
+cat("depression_binary identical to has_major_dep?\n")
+print(identical(analysis_tibble$depression_binary, analysis_tibble$has_major_dep))
+
+cat("\nanxiety_binary identical to has_anx_pan?\n")
+print(identical(analysis_tibble$anxiety_binary, analysis_tibble$has_anx_pan))
+
+cat("\nschizophrenia_binary identical to has_schizophrenia?\n")
+print(identical(analysis_tibble$schizophrenia_binary, analysis_tibble$has_schizophrenia))
+
+# If not identical, show disagreement counts
+cat("\ndepression vs has_major_dep disagreements:",
+    sum(analysis_tibble$depression_binary != analysis_tibble$has_major_dep, na.rm = TRUE), "\n")
+cat("anxiety vs has_anx_pan disagreements:",
+    sum(analysis_tibble$anxiety_binary != analysis_tibble$has_anx_pan, na.rm = TRUE), "\n")
+cat("schizophrenia disagreements:",
+    sum(analysis_tibble$schizophrenia_binary != analysis_tibble$has_schizophrenia, na.rm = TRUE), "\n")
+```
+
+### dep_or_anx_binary vs depression_binary | anxiety_binary
+
+```{r redundancy-dep-or-anx}
+derived <- as.integer(
+  analysis_tibble$depression_binary == 1 | analysis_tibble$anxiety_binary == 1
+)
+cat("dep_or_anx_binary == (depression_binary | anxiety_binary)?\n")
+print(identical(analysis_tibble$dep_or_anx_binary, derived))
+```
+
+### marital vs is_married
+
+`is_married` is likely derived from `marital` (1 if "Married or Partnered"). If so,
+one is redundant when both are included. Cross-tab confirms the mapping.
+
+```{r redundancy-marital}
+cat("Crosstab of marital vs is_married:\n")
+print(table(analysis_tibble$marital, analysis_tibble$is_married, useNA = "always"))
+```
+
+## Factor Levels
+
+How many levels, and what are they? Important for deciding how to dummy encode and
+whether `site` (many levels) needs special treatment.
+
+```{r factor-levels}
+fct_cols <- c("project", "race", "job", "education", "marital", "treatment_arm", "site")
+
+for (col in fct_cols) {
+  cat("\n===", col, "===\n")
+  cat("n levels:", nlevels(analysis_tibble[[col]]), "\n")
+  print(table(analysis_tibble[[col]], useNA = "always"))
+}
+```
+
+## Ordered Factor Levels and NAs
+
+```{r ordered-levels}
+ord_cols <- c("ftnd_score", "per_day", "housing_stability_ord")
+
+for (col in ord_cols) {
+  cat("\n===", col, "===\n")
+  cat("Levels:", paste(levels(analysis_tibble[[col]]), collapse = " < "), "\n")
+  cat("n_na:", sum(is.na(analysis_tibble[[col]])), "\n")
+  print(table(analysis_tibble[[col]], useNA = "always"))
+}
+```
+
+## NA Checks — Columns Not Showing NAs in Glimpse
+
+Verify these are truly complete before assuming `no_treatment` with no imputation.
+
+```{r na-checks}
+check_cols <- c(
+  "pain_score", "withdrawal_pre", "withdrawal_pre_score",
+  "iv_days_total", "iv_events", "iv_amount_dominant",
+  "cocaine_inject_days", "heroin_inject_days", "speedball_inject_days",
+  "opioid_inject_days", "speed_inject_days",
+  "rx_days", "rx_categories", "rx_any_binary",
+  "took_own_study_drug", "took_other_study_drug"
+)
+
+tibble(
+  column = check_cols,
+  n_na   = map_int(check_cols, \(col) sum(is.na(analysis_tibble[[col]]))),
+  min    = map_dbl(check_cols, \(col) min(analysis_tibble[[col]], na.rm = TRUE)),
+  max    = map_dbl(check_cols, \(col) max(analysis_tibble[[col]], na.rm = TRUE))
+) |> kable()
+```
+
+## alcohol_missing_amnt_* — What Does "Missing Amount" Mean?
+
+In `all_drugs`, alcohol entries where the amount category (heavy/light) wasn't
+recorded are grouped as "missing." This is a data artifact, not a meaningful
+predictor in the usual sense. Check prevalence.
+
+```{r alcohol-missing}
+cat("alcohol_missing_amnt_days — range:",
+    range(analysis_tibble$alcohol_missing_amnt_days), "\n")
+cat("n participants with any missing-amount days:",
+    sum(analysis_tibble$alcohol_missing_amnt_days > 0), "\n")
+cat("alcohol_missing_amnt_binary — n=1:",
+    sum(analysis_tibble$alcohol_missing_amnt_binary), "\n")
+```
+
+## iv_amount_dominant — Extreme Values
+
+Values up to 1500 visible in glimpse. Check distribution shape. If heavily
+right-skewed, a log1p transform might help logistic regression.
+
+```{r iv-amount}
+summary(analysis_tibble$iv_amount_dominant)
+hist(analysis_tibble$iv_amount_dominant, breaks = 50,
+     main = "iv_amount_dominant distribution", xlab = "amount")
+```
+
+---
+
+# Per-Column Sections (Glimpse Order)
+
+Groups used below:
+- `ID` — exclude via `update_role()`
+- `no_treatment` — numeric/int, no NAs, no encoding needed
+- `nominal_factor` — unordered `<fct>`, one-hot dummy encode
+- `ordered_factor` — `<ord>`, step_ordinalscore() or polynomial contrasts
+- `mcar` — item-level missingness, kNN impute
+- `structural_na` — study-level MNAR, step_indicate_na() + median impute
+- `check_zv` — suspected near-zero variance, verify before including
+- `check_redundant` — potentially duplicates another column
+
+---
+
+## who
+**Group:** `ID` — exclude via `update_role(who, new_role = "ID")`.
+
+## project
+**Group:** `nominal_factor` — `<fct>`, 3 levels (27/30/51). One-hot encode. No NAs (all participants assigned to a study).
+
+## alcohol_heavy_amnt_days
+**Group:** `no_treatment` — `<int>`, count 0–28.
+
+## alcohol_heavy_amnt_binary
+**Group:** `no_treatment` — `<int>`, 0/1.
+
+## alcohol_heavy_amnt_streak
+**Group:** `no_treatment` — `<int>`, count.
+
+## alcohol_light_amnt_days
+**Group:** `no_treatment` — `<int>`, count 0–28.
+
+## alcohol_light_amnt_binary
+**Group:** `no_treatment` — `<int>`, 0/1.
+
+## alcohol_missing_amnt_days
+**Group:** `no_treatment` (tentative) — `<int>`. Days of alcohol use with uncategorized amount. See spot check above — if very few non-zero, may approach ZV.
+
+## alcohol_missing_amnt_binary
+**Group:** `no_treatment` (tentative) — `<int>`, 0/1. Same caveat.
+
+## amphetamine_days
+**Group:** `no_treatment` — `<int>`, count.
+
+## amphetamine_binary
+**Group:** `no_treatment` — `<int>`, 0/1.
+
+## amphetamine_streak
+**Group:** `no_treatment` — `<int>`, count.
+
+## analgesic_days
+**Group:** `no_treatment` — `<int>`, count. Low expected prevalence.
+
+## analgesic_binary
+**Group:** `no_treatment` — `<int>`, 0/1.
+
+## antiemetic_days
+**Group:** `no_treatment` — `<int>`, count. Low expected prevalence.
+
+## antiemetic_binary
+**Group:** `no_treatment` — `<int>`, 0/1.
+
+## benzodiazepine_days
+**Group:** `no_treatment` — `<int>`, count 0–28.
+
+## benzodiazepine_binary
+**Group:** `no_treatment` — `<int>`, 0/1.
+
+## benzodiazepine_streak
+**Group:** `no_treatment` — `<int>`, count.
+
+## buprenorphine_days
+**Group:** `no_treatment` — `<int>`, count. Pre-randomization BUP use.
+
+## buprenorphine_binary
+**Group:** `no_treatment` — `<int>`, 0/1.
+
+## cannabinoids_days
+**Group:** `no_treatment` — `<int>`, count.
+
+## cannabinoids_binary
+**Group:** `no_treatment` — `<int>`, 0/1.
+
+## cannabinoids_streak
+**Group:** `no_treatment` — `<int>`, count.
+
+## cocaine_days
+**Group:** `no_treatment` — `<int>`, count.
+
+## cocaine_binary
+**Group:** `no_treatment` — `<int>`, 0/1.
+
+## cocaine_streak
+**Group:** `no_treatment` — `<int>`, count.
+
+## crack_days
+**Group:** `no_treatment` — `<int>`, count.
+
+## crack_binary
+**Group:** `no_treatment` — `<int>`, 0/1.
+
+## crack_streak
+**Group:** `no_treatment` — `<int>`, count.
+
+## fentanyl_days
+**Group:** `no_treatment` (tentative, low prevalence) — `<int>`, count. Batch audit will show whether n_distinct = 1 (ZV).
+
+## fentanyl_binary
+**Group:** `no_treatment` (tentative) — `<int>`, 0/1.
+
+## fentanyl_streak
+**Group:** `no_treatment` (tentative) — `<int>`, count.
+
+## heroin_days
+**Group:** `check_zv` — `<int>`. Glimpse shows many 28s (max possible). If the vast majority of participants have 28, this approaches ZV. See ZV spot check.
+
+## heroin_binary
+**Group:** `check_zv` — `<int>`, 0/1. Glimpse shows all 1s — OUD inclusion criterion makes heroin use near-universal. If ZV, `step_zv()` removes it automatically.
+
+## heroin_streak
+**Group:** `no_treatment` — `<int>`, count. More variable than heroin_binary.
+
+## mdma_hallucinogen_days
+**Group:** `no_treatment` (low prevalence) — `<int>`, count.
+
+## mdma_hallucinogen_binary
+**Group:** `no_treatment` (low prevalence) — `<int>`, 0/1.
+
+## methadone_days
+**Group:** `no_treatment` — `<int>`, count. Pre-randomization methadone use.
+
+## methadone_binary
+**Group:** `no_treatment` — `<int>`, 0/1.
+
+## methamphetamine_days
+**Group:** `no_treatment` — `<int>`, count.
+
+## methamphetamine_binary
+**Group:** `no_treatment` — `<int>`, 0/1.
+
+## methamphetamine_streak
+**Group:** `no_treatment` — `<int>`, count.
+
+## muscle_relaxant_days
+**Group:** `no_treatment` (low prevalence) — `<int>`, count.
+
+## muscle_relaxant_binary
+**Group:** `no_treatment` (low prevalence) — `<int>`, 0/1.
+
+## opioid_days
+**Group:** `no_treatment` — `<int>`, count. Prescription opioids (distinct from heroin).
+
+## opioid_binary
+**Group:** `no_treatment` — `<int>`, 0/1.
+
+## opioid_streak
+**Group:** `no_treatment` — `<int>`, count.
+
+## pcp_days
+**Group:** `no_treatment` (very low prevalence) — `<int>`, count. Likely near-ZV.
+
+## pcp_binary
+**Group:** `no_treatment` (very low prevalence) — `<int>`, 0/1.
+
+## pcp_streak
+**Group:** `no_treatment` — `<int>`, count.
+
+## sedatives_days
+**Group:** `no_treatment` — `<int>`, count.
+
+## sedatives_binary
+**Group:** `no_treatment` — `<int>`, 0/1.
+
+## sedatives_streak
+**Group:** `no_treatment` — `<int>`, count.
+
+## suboxone_days
+**Group:** `no_treatment` — `<int>`, count. Pre-randomization suboxone.
+
+## suboxone_binary
+**Group:** `no_treatment` — `<int>`, 0/1.
+
+## alcohol_restraint
+**Group:** `no_treatment` — `<int>`, count (days of alcohol abstinence in the window).
+
+## polydrug_days
+**Group:** `no_treatment` — `<int>`, count.
+
+## drug_breadth
+**Group:** `no_treatment` — `<int>`, count of distinct drug categories used.
+
+## asi_iv_binary
+**Group:** `no_treatment` — `<int>`, 0/1. ASI IV drug use flag.
+
+## age
+**Group:** `no_treatment` — `<dbl>`, continuous. No NAs expected.
+
+## is_hispanic
+**Group:** `no_treatment` — `<int>`, 0/1.
+
+## race
+**Group:** `nominal_factor` — `<fct>`. Unordered. One-hot encode. See factor levels spot check for full level list.
+
+## job
+**Group:** `nominal_factor` + `mcar` — `<fct>`, has NAs. kNN impute first, then one-hot encode.
+
+## is_living_stable
+**Group:** `mcar` — `<int>`, 0/1, has NAs. kNN impute (or mode impute).
+
+## education
+**Group:** `nominal_factor` + `mcar` — `<fct>`, has NAs. kNN impute, then one-hot encode.
+
+## marital
+**Group:** `nominal_factor` + `mcar` + `check_redundant` — `<fct>`, has NAs. See redundancy check vs `is_married`. If keeping, kNN impute then one-hot encode.
+
+## is_married
+**Group:** `mcar` + `check_redundant` — `<int>`, 0/1, has NAs. Likely derived from `marital` → redundant if `marital` is in the recipe. See redundancy spot check.
+
+## is_male
+**Group:** `no_treatment` — `<int>`, 0/1. No NAs expected.
+
+## is_smoker
+**Group:** `check_zv` — `<int>`, 0/1. Glimpse shows all 1s — OUD populations have extremely high smoking rates. If ZV, `step_zv()` removes it. See ZV spot check.
+
+## ftnd_score
+**Group:** `ordered_factor` — `<ord>`. Fagerström nicotine dependence score. Linear spacing defensible (0–10 scale). Check NAs (see spot check). If NAs exist, add `mcar`. Use `step_ordinalscore()`.
+
+## per_day
+**Group:** `ordered_factor` — `<ord>`. Cigarettes per day in ordered categories ("10 OR LESS", "11-20", "21-30", "31+"). Spacing between categories is unequal — consider polynomial contrasts (`step_dummy(one_hot = FALSE)`) instead of `step_ordinalscore()`. Check NAs. See levels spot check.
+
+## pain_score
+**Group:** `no_treatment` (tentative) — `<int>`. Glimpse shows 0/1/2 range. Treated as continuous integer. See NA and range check above.
+
+## has_schizophrenia
+**Group:** `no_treatment` — `<int>`, 0/1.
+
+## has_major_dep
+**Group:** `no_treatment` + `check_redundant` — `<int>`, 0/1. See redundancy check vs `depression_binary`.
+
+## has_bipolar
+**Group:** `no_treatment` — `<int>`, 0/1.
+
+## has_anx_pan
+**Group:** `no_treatment` + `check_redundant` — `<int>`, 0/1. See redundancy check vs `anxiety_binary`.
+
+## has_brain_damage
+**Group:** `no_treatment` — `<int>`, 0/1. Low prevalence expected.
+
+## has_epilepsy
+**Group:** `no_treatment` — `<int>`, 0/1. Low prevalence expected.
+
+## has_opiates_dx
+**Group:** `check_zv` — `<int>`, 0/1. OUD diagnosis is inclusion criterion — likely all 1s. If ZV, exclude. See ZV spot check.
+
+## has_alcol_dx
+**Group:** `structural_na` — `<int>`, MNAR (study-level). `step_indicate_na()` + `step_impute_median()`.
+
+## has_amphetamines_dx
+**Group:** `structural_na` — `<int>`, MNAR.
+
+## has_cannabis_dx
+**Group:** `structural_na` — `<int>`, MNAR.
+
+## has_cocaine_dx
+**Group:** `structural_na` — `<int>`, MNAR.
+
+## has_sedatives_dx
+**Group:** `structural_na` — `<int>`, MNAR.
+
+## depression_binary
+**Group:** `check_redundant` — `<int>`, 0/1. May be identical to `has_major_dep`. See redundancy spot check. Final group depends on result: if identical → drop; if different → `no_treatment`.
+
+## anxiety_binary
+**Group:** `check_redundant` — `<int>`, 0/1. May be identical to `has_anx_pan`. See redundancy spot check.
+
+## schizophrenia_binary
+**Group:** `check_redundant` — `<int>`, 0/1. May be identical to `has_schizophrenia`.
+
+## psych_comorbidity_count
+**Group:** `no_treatment` — `<int>`, count. Derived from has_* flags. Correlated with them but not redundant (it's a sum).
+
+## substance_dx_count
+**Group:** `structural_na` — `<int>`, MNAR. Missing for same studies as `has_*_dx`.
+
+## dep_or_anx_binary
+**Group:** `check_redundant` — `<int>`, 0/1. Likely = `depression_binary | anxiety_binary`. If so, redundant with both. See redundancy spot check.
+
+## is_homeless
+**Group:** `structural_na` — `<int>`, MNAR. 77% NA (study-level, not item-level). 570 observed values worth keeping. `step_indicate_na()` + `step_impute_median()`.
+
+## housing_stability_ord
+**Group:** `ordered_factor` + `mcar` — `<ord>`, has NAs. kNN impute first, then `step_ordinalscore()` (or polynomial contrasts depending on levels). See ordered levels spot check.
+
+## treatment_arm
+**Group:** `nominal_factor` — `<fct>`. No NAs expected. One-hot encode. See factor levels spot check.
+
+## heroin_rbs_alldr_incons
+**Group:** `no_treatment` — `<int>`, 0/1. Heroin denial flag (TLFB × all-drugs inconsistency).
+
+## iv_days_total
+**Group:** `no_treatment` (pending NA check) — `<dbl>`. See NA spot check.
+
+## iv_events
+**Group:** `no_treatment` (pending NA check) — `<dbl>`. See NA spot check.
+
+## iv_amount_dominant
+**Group:** `no_treatment` (pending NA check and distribution check) — `<dbl>`. Extreme values visible. See iv_amount spot check. May benefit from log1p transform if right-skewed.
+
+## iv_shared_needles
+**Group:** `no_treatment` — `<int>`, 0/1.
+
+## cocaine_inject_days
+**Group:** `no_treatment` (pending NA check) — `<dbl>`. See NA spot check.
+
+## heroin_inject_days
+**Group:** `no_treatment` (pending NA check) — `<dbl>`. See NA spot check.
+
+## speedball_inject_days
+**Group:** `no_treatment` (pending NA check) — `<dbl>`. See NA spot check.
+
+## opioid_inject_days
+**Group:** `no_treatment` (pending NA check) — `<dbl>`. See NA spot check.
+
+## speed_inject_days
+**Group:** `no_treatment` (pending NA check) — `<dbl>`. See NA spot check.
+
+## site
+**Group:** `nominal_factor` — `<fct>`. Many clinical site levels. See factor levels spot check for exact count. High level count means many dummy columns — may want to consider whether to include.
+
+## withdrawal_pre
+**Group:** `check_redundant` — `<int>`. Appears identical to `withdrawal_pre_score`. See redundancy spot check. If identical → drop `withdrawal_pre`, keep `withdrawal_pre_score` (engineered version).
+
+## took_own_study_drug
+**Group:** `no_treatment` — `<int>`, 0/1. Whether participant took their own assigned study drug.
+
+## took_other_study_drug
+**Group:** `no_treatment` — `<int>`, 0/1.
+
+## withdrawal_pre_score
+**Group:** `no_treatment` (pending NA check) — `<int>`, 0–3 scalar. The engineered scalar from §21. See NA spot check and redundancy check vs `withdrawal_pre`.
+
+## has_major_dep_x_withdrawal_pre_score
+**Group:** `no_treatment` — `<int>`. Interaction term (already computed). Treat as numeric predictor.
+
+## has_anx_pan_x_withdrawal_pre_score
+**Group:** `no_treatment` — `<int>`. Interaction term.
+
+## has_anx_pan_x_benzodiazepine_days
+**Group:** `no_treatment` — `<int>`. Interaction term.
+
+## rx_days
+**Group:** `no_treatment` (pending NA check) — `<int>`. Prescription drug days in window. See NA spot check.
+
+## rx_categories
+**Group:** `no_treatment` (pending NA check) — `<int>`. Count of distinct prescription categories. See NA spot check.
+
+## rx_any_binary
+**Group:** `no_treatment` (pending NA check) — `<int>`, 0/1.

@@ -691,7 +691,7 @@ withdrawal_pp_feats <- withdrawal_pre_post |>
   summarize(score = first(score), .groups = "drop") |>
   pivot_wider(names_from = what, values_from = score,
               names_prefix = "withdrawal_") |>
-  transmute(who, withdrawal_pre, withdrawal_post)
+  transmute(who, withdrawal_pre)
 
 
 # ── 20. Database Notes: Took THEIR / DIFFERENT study drug ─────────

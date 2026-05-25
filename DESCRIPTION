@@ -10,6 +10,7 @@ Roxygen: list(markdown = TRUE)
 RoxygenNote: 8.0.0
 Suggests:
     conflicted,
+    CTNote,
     dplyr,
     glue,
     gtsummary (>= 2.0.3),
