@@ -918,22 +918,20 @@ heroin_rbs_feats <- heroin_denial_fast_compute |>
 # [Features_To_Include_Accepted_Suggestions.Rmd → Database Notes]
 #
 # Interactions between psychiatric comorbidities (§13) and:
-#   - withdrawal main effects (§21): depression/anxiety amplify withdrawal-driven
-#     craving and drug-seeking. withdrawal_mean/max will be NA until the
-#     day_zero calibration commit — these features will be all-NA until then.
+#   - withdrawal scalar (§21): depression/anxiety amplify withdrawal-driven
+#     craving and drug-seeking. withdrawal_mean/max collapsed to withdrawal_pre_score
+#     (single baseline observation per person — see §21 note).
 #   - benzodiazepine use (§5): anxiety + benzo co-use = elevated CNS/OD risk
 # NA in benzodiazepine_days means no observed use → imputed 0 before multiplying.
 
 psych_cross_feats <- analysis_base |>
-  left_join(select(psych_feats,    who, has_major_dep, has_anx_pan),       by = "who") |>
-  left_join(select(wdl_main_feats, who, withdrawal_mean, withdrawal_max),   by = "who") |>
-  left_join(select(drug_feats,     who, benzodiazepine_days),               by = "who") |>
+  left_join(select(psych_feats,    who, has_major_dep, has_anx_pan),     by = "who") |>
+  left_join(select(wdl_main_feats, who, withdrawal_pre_score),           by = "who") |>
+  left_join(select(drug_feats,     who, benzodiazepine_days),            by = "who") |>
   transmute(
     who,
-    has_major_dep_x_withdrawal_mean       = has_major_dep * withdrawal_mean,
-    has_major_dep_x_withdrawal_max        = has_major_dep * withdrawal_max,
-    has_anx_pan_x_withdrawal_mean         = has_anx_pan   * withdrawal_mean,
-    has_anx_pan_x_withdrawal_max          = has_anx_pan   * withdrawal_max,
+    has_major_dep_x_withdrawal_pre_score  = has_major_dep * withdrawal_pre_score,
+    has_anx_pan_x_withdrawal_pre_score    = has_anx_pan   * withdrawal_pre_score,
     has_anx_pan_x_benzodiazepine_days     = has_anx_pan   * replace_na(benzodiazepine_days, 0L)
   )
 
