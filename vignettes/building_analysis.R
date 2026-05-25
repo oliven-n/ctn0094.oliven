@@ -786,61 +786,53 @@ wdl_main_feats <- withdrawal_pre_post |>
 #
 # Self-medication hypothesis: participants who use more HARD drugs on days
 # of higher withdrawal severity are more likely to relapse post-treatment.
-# Pain was originally proposed here, but pain is a cross-sectional scalar
-# (one row per person). withdrawal (COWS/SOWS daily) is the correct
-# longitudinal severity measure.
-#
-# Hard drug composite: Heroin, Fentanyl, Cocaine, Crack, Methamphetamine,
-#                      Amphetamine, Opioid (prescription opioids via drug_map).
-# "Opioid" added: prescription opioid use on high-withdrawal days is the
-# core self-medication pathway. Does NOT include MOUD (Buprenorphine/
-# Suboxone/Methadone are separate pass-through categories in what_grouped).
 #
 # Window: per-person [day_zero - 28, day_zero) via all_drugs_windowed and day_zero_lookup.
-# withdrawal_numeric defined here is reused in §23 — these sections run together.
+# DROPPED — requires ≥2 longitudinal withdrawal observations per person.
+# withdrawal_pre_post has exactly 1 "pre" obs/person; correlation is undefined.
+# withdrawal_numeric (defined here) was also used in §23 — both dropped together.
+# Kept for reference.
 
 hard_drug_cats <- c(
   "Heroin", "Fentanyl", "Cocaine", "Crack",
   "Methamphetamine", "Amphetamine", "Opioid"
 )
 
-# Like all_drugs_filtered but WITHOUT the >=10 primary filter — that filter
-# was designed for standalone drug count features (§5), not for a daily
-# binary flag where even a single rare event is meaningful.
-hard_drug_days_flag <- all_drugs_windowed |>
-  filter(when >= day_zero - 28, when < day_zero,
-         as.character(what_grouped) %in% hard_drug_cats) |>
-  distinct(who, when) |>
-  mutate(harddrug_use = 1L)
+withdrawal_hard_feats <- analysis_base |> select(who)
 
-# withdrawal is an ordered factor: 0=None, 1=mild, 2=moderate, 3=severe.
-withdrawal_numeric <- withdrawal |>
-  mutate(score = as.integer(as.character(withdrawal))) |>
-  left_join(day_zero_lookup, by = "who") |>
-  mutate(day_zero = replace_na(day_zero, 0L)) |>
-  filter(when >= day_zero - 28, when < day_zero) |>
-  transmute(who, when, withdrawal_score = score)
-
-withdrawal_hard_feats <- withdrawal_numeric |>
-  left_join(hard_drug_days_flag, by = c("who", "when")) |>
-  mutate(harddrug_use = replace_na(harddrug_use, 0L)) |>
-  group_by(who) |>
-  summarize(
-    withdrawal_harddrug_corr = {
-      nd <- sum(harddrug_use)
-      if (nd == 0L) 0
-      else if (nd == n()) NA_real_
-      else suppressWarnings(cor(withdrawal_score, harddrug_use, use = "complete.obs"))
-    },
-    withdrawal_highrisk_harddrug_rate = {
-      med <- median(withdrawal_score, na.rm = TRUE)
-      high_wdl_days <- withdrawal_score > med
-      if (sum(high_wdl_days, na.rm = TRUE) == 0L) NA_real_
-      else mean(harddrug_use[high_wdl_days], na.rm = TRUE)
-    },
-    .groups = "drop"
-  ) |>
-  transmute(who, withdrawal_harddrug_corr, withdrawal_highrisk_harddrug_rate)
+# # hard_drug_days_flag <- all_drugs_windowed |>
+# #   filter(when >= day_zero - 28, when < day_zero,
+# #          as.character(what_grouped) %in% hard_drug_cats) |>
+# #   distinct(who, when) |>
+# #   mutate(harddrug_use = 1L)
+# #
+# # withdrawal_numeric <- withdrawal |>
+# #   mutate(score = as.integer(as.character(withdrawal))) |>
+# #   left_join(day_zero_lookup, by = "who") |>
+# #   mutate(day_zero = replace_na(day_zero, 0L)) |>
+# #   filter(when >= day_zero - 28, when < day_zero) |>
+# #   transmute(who, when, withdrawal_score = score)
+# #
+# # withdrawal_hard_feats <- withdrawal_numeric |>
+# #   left_join(hard_drug_days_flag, by = c("who", "when")) |>
+# #   mutate(harddrug_use = replace_na(harddrug_use, 0L)) |>
+# #   group_by(who) |>
+# #   summarize(
+# #     withdrawal_harddrug_corr = {
+# #       nd <- sum(harddrug_use)
+# #       if (nd == 0L) 0
+# #       else if (nd == n()) NA_real_
+# #       else suppressWarnings(cor(withdrawal_score, harddrug_use, use = "complete.obs"))
+# #     },
+# #     withdrawal_highrisk_harddrug_rate = {
+# #       med <- median(withdrawal_score, na.rm = TRUE)
+# #       high_wdl_days <- withdrawal_score > med
+# #       if (sum(high_wdl_days, na.rm = TRUE) == 0L) NA_real_
+# #       else mean(harddrug_use[high_wdl_days], na.rm = TRUE)
+# #     },
+# #     .groups = "drop"
+# #   ) |>
+# #   transmute(who, withdrawal_harddrug_corr, withdrawal_highrisk_harddrug_rate)
 
 
 # ── 23. Database Notes: Withdrawal × soft drug interaction ────────
