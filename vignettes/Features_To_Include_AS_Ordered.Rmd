@@ -841,7 +841,14 @@ glimpse(pain)
 
 #### Feature proposal
 
-**Baseline pain score** (mean or maximum pain reported across the -28 to 0 window). Self-reported pain is independently associated with OUD treatment dropout and relapse, above and beyond the pain x drug use interaction proposed in the Database Notes (Rhodin et al. 2006; Dunn et al. 2014). Chronic pain is a key driver of opioid self-medication and should appear both as a main effect and in the interaction terms.
+Pain is recorded as an ordinal factor: `"No Pain"` (scored 0), `"Very mild to Moderate Pain"` (1), `"Severe Pain"` (2), `"Missing"` (→ NA). Four features computed across the −28 to 0 window:
+
+- **`pain_mean`**: mean ordinal score across days with non-missing pain records.
+- **`pain_max`**: maximum ordinal score in the window.
+- **`pct_days_severe`**: proportion of non-missing days where pain was severe (score = 2).
+- **`pct_days_any_pain`**: proportion of non-missing days where any pain was reported (score > 0).
+
+Self-reported pain is independently associated with OUD treatment dropout and relapse, above and beyond the pain × drug use interaction proposed in the Database Notes (Rhodin et al. 2006; Dunn et al. 2014). Chronic pain is a key driver of opioid self-medication and should appear both as a main effect and in the interaction terms.
 
 ---
 

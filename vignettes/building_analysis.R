@@ -461,22 +461,33 @@ fager_feats <- fagerstrom |>
 
 # ── 12. Pain: main effect ─────────────────────────────────────────
 # [Features_To_Include_Accepted_Suggestions.Rmd → pain]
-
-# INSPECT — run this and check column names
-glimpse(pain)
-# Expected: who, when, and a pain score column (numeric, e.g. 0-10 NRS)
-# TODO: replace <PAIN_COL> with the actual column name throughout this section
+#
+# glimpse(pain): who (int), when (int), pain (fct: "No Pain" /
+# "Very mild to Moderate Pain" / "Severe Pain" / "Missing").
+# Scored ordinally: No Pain → 0, Very mild to Moderate → 1, Severe → 2, Missing → NA.
 
 pain_window <- pain |>
-  filter(when >= -28, when < 0)
-  # TODO: select(who, when, pain_score = <PAIN_COL>)
+  filter(when >= -28, when < 0) |>
+  transmute(
+    who,
+    when,
+    pain_score = case_when(
+      pain == "No Pain"                    ~ 0L,
+      pain == "Very mild to Moderate Pain" ~ 1L,
+      pain == "Severe Pain"                ~ 2L,
+      .default = NA_integer_
+    )
+  )
 
 pain_main_feats <- pain_window |>
   group_by(who) |>
-  summarize(.groups = "drop")
-  # TODO: add after resolving pain_score column:
-  # pain_mean = mean(pain_score, na.rm = TRUE),
-  # pain_max  = max(pain_score,  na.rm = TRUE),
+  summarise(
+    pain_mean         = mean(pain_score, na.rm = TRUE),
+    pain_max          = max(pain_score,  na.rm = TRUE),
+    pct_days_severe   = mean(pain_score == 2, na.rm = TRUE),
+    pct_days_any_pain = mean(pain_score  > 0, na.rm = TRUE),
+    .groups = "drop"
+  )
 
 
 # ── 13. Psychiatric features ──────────────────────────────────────
