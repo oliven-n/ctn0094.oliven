@@ -746,35 +746,40 @@ study_drug_feats <- analysis_base |>
   transmute(who, took_own_study_drug, took_other_study_drug)
 
 
-# ── 21. Withdrawal: main effect (windowed aggregates) ─────────────
+# ── 21. Withdrawal: baseline scalar ──────────────────────────────
 # [Features_To_Include_Accepted_Suggestions.Rmd → withdrawal]
 #
-# withdrawal (COWS/SOWS daily severity) is the longitudinal daily variable
-# for this feature set — the role pain was incorrectly proposed to fill.
+# withdrawal_pre_post has exactly 1 pre-induction COWS/SOWS observation
+# per person — baseline withdrawal severity at treatment entry.
+# Mirrors pain_main_feats (§12): direct transmute, no window needed.
 # Factor levels: 0=None, 1=mild, 2=moderate, 3=severe → coerced to integer.
 #
-# Four aggregate features (same pattern as old pain aggregates from §12):
-#   withdrawal_mean      — mean severity across window days
-#   withdrawal_max       — peak severity in window
-#   wdl_pct_days_severe  — proportion of days at severe (score == 3)
-#   wdl_pct_days_any     — proportion of days with any withdrawal (score > 0)
-#
-# Window: per-person [day_zero - 28, day_zero). withdrawal$when is [0, 374];
-# participants with day_zero > 0 will have non-NA aggregates here.
+# NOTE: windowed longitudinal aggregates (withdrawal_mean, withdrawal_max,
+# wdl_pct_days_severe, wdl_pct_days_any) were implemented but removed —
+# withdrawal_pre_post contains exactly 1 "pre" obs per person, making
+# windowed aggregates equivalent to this scalar. See commented block below.
 
-wdl_main_feats <- withdrawal |>
-  mutate(score = as.integer(as.character(withdrawal))) |>
-  left_join(day_zero_lookup, by = "who") |>
-  mutate(day_zero = replace_na(day_zero, 0L)) |>
-  filter(when >= day_zero - 28, when < day_zero) |>
-  group_by(who) |>
-  summarize(
-    withdrawal_mean     = mean(score, na.rm = TRUE),
-    withdrawal_max      = max(score,  na.rm = TRUE),
-    wdl_pct_days_severe = mean(score == 3, na.rm = TRUE),
-    wdl_pct_days_any    = mean(score  > 0, na.rm = TRUE),
-    .groups = "drop"
-  )
+wdl_main_feats <- withdrawal_pre_post |>
+  filter(what == "pre") |>
+  mutate(withdrawal_pre_score = as.integer(as.character(withdrawal))) |>
+  transmute(who, withdrawal_pre_score)
+
+# DROPPED — windowed aggregates via day_zero anchor. withdrawal has only
+# 1 pre-induction observation per person; aggregates collapse to the scalar
+# above. Kept for reference only.
+# wdl_main_feats_longitudinal <- withdrawal |>
+#   mutate(score = as.integer(as.character(withdrawal))) |>
+#   left_join(day_zero_lookup, by = "who") |>
+#   mutate(day_zero = replace_na(day_zero, 0L)) |>
+#   filter(when >= day_zero - 28, when < day_zero) |>
+#   group_by(who) |>
+#   summarize(
+#     withdrawal_mean     = mean(score, na.rm = TRUE),
+#     withdrawal_max      = max(score,  na.rm = TRUE),
+#     wdl_pct_days_severe = mean(score == 3, na.rm = TRUE),
+#     wdl_pct_days_any    = mean(score  > 0, na.rm = TRUE),
+#     .groups = "drop"
+#   )
 
 
 # ── 22. Database Notes: Withdrawal × hard drug interaction ────────
