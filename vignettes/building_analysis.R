@@ -956,22 +956,40 @@ cat("\nDimensions:", nrow(analysis_tibble), "rows x", ncol(analysis_tibble), "co
 # Appendix A: Tentative feature — all_drugs × rbs inconsistency
 # ══════════════════════════════════════════════════════════════════════════════
 #
-# Compares each participant's self-reported 30-day drug use (rbs) against
-# observed event counts from all_drugs over the pre-study window (-28 to 0).
+# The rbs dataset asks "how many days in the last 30 did you use [drug]?"
+# The all_drugs dataset records actual drug use events (from tlfb/diary) with
+# a `when` column (days relative to randomization, day 0).
 #
-#   inconsistency = rbs_days - obs_days
-#     Positive: reported MORE days than recorded  (over-report vs records)
-#     Negative: reported FEWER days than recorded (under-report vs records)
-#     Zero:     consistent
+# This section computes, for each (who, drug category):
+#   inconsistency = rbs_days_reported - obs_days_in_window
+#     Positive: participant reported MORE days than recorded (over-report)
+#     Negative: participant reported FEWER days than recorded (under-report)
+#     Zero:     the two sources agree
 #
-# Caveats to keep in mind when reading the output:
-#   - rbs "last 30 days" ≈ window days -28 to -1 (28 days, not 30).
-#   - rbs days are CATEGORIZED in CTN-0051 (values: 0, 4, 30) — not exact counts.
-#   - "opioid" mapping includes MOUD (Methadone, Buprenorphine, Suboxone);
-#     participants on treatment will show high observed opioid days.
-#   - speedball = co-occurrence of Heroin AND (Cocaine/Crack) on same (who, when).
+# ⚠️  Known confounders — interpret tables with these in mind:
+#   (1) rbs days are BUCKETED in CTN-0051 (values: 0, 4, 30), not exact counts.
+#       Most over-reporting is likely this quantization artifact, not denial.
+#   (2) "opioid" mapping includes MOUD (Methadone, Buprenorphine, Suboxone).
+#       Patients in treatment will always show high obs_days for "opioid"
+#       but may not think of their prescription as "drug use" in rbs.
+#   (3) Window mismatch: rbs asks about "last 30 days"; our window is 28 days.
+#   (4) all_drugs is also self-reported (tlfb), so this is self-report vs
+#       self-report across two instruments — not a hard ground truth.
+#   (5) speedball has no direct entry in all_drugs; it is inferred as days
+#       where both Heroin and (Cocaine/Crack) appear for the same (who, when).
 
-# ── A.1 Mapping: all_drugs$what → rbs categories ─────────────────────────────
+# ── A.1 Mapping: all_drugs$what → rbs drug categories ────────────────────────
+#
+# rbs has 5 drug categories: cocaine, heroin, opioid, speed, speedball.
+# We map all_drugs drug names onto these 5 labels. Drugs not in this map
+# (e.g. cannabis, alcohol, benzodiazepines) have no rbs counterpart and
+# are excluded from the comparison.
+#
+# cocaine  → Cocaine + Crack (both are cocaine; crack is the freebase form)
+# heroin   → Heroin
+# opioid   → all non-heroin opioids (see caveat 2 above re: MOUD)
+# speed    → Amphetamine + Methamphetamine
+# speedball→ computed separately as heroin+cocaine co-occurrence (see A.2)
 
 rbs_what_map <- c(
   "Cocaine"         = "cocaine",
@@ -987,21 +1005,27 @@ rbs_what_map <- c(
   "Hydromorphone"   = "opioid",
   "Fentanyl"        = "opioid",
   "Opium"           = "opioid",
-  "Methadone"       = "opioid",
+  "Methadone"       = "opioid",   # ← MOUD; inflates obs_days for treated patients
   "Merperidine"     = "opioid",
   "Nalbuphine"      = "opioid",
   "Oxymorphone"     = "opioid",
-  "Buprenorphine"   = "opioid",
-  "Suboxone"        = "opioid",
+  "Buprenorphine"   = "opioid",   # ← MOUD
+  "Suboxone"        = "opioid",   # ← MOUD
   "Amphetamine"     = "speed",
   "Methamphetamine" = "speed"
 )
 
-cat("\n── Mapping table ──\n")
+cat("\n── Mapping table: all_drugs drug names → rbs category ──\n")
 print(tibble(all_drugs_what = names(rbs_what_map), rbs_category = rbs_what_map) |>
         arrange(rbs_category, all_drugs_what))
 
 # ── A.2 Observed days per (who, rbs_category) from all_drugs window ───────────
+#
+# Filter all_drugs to the pre-study window (-28 to 0), apply the drug name
+# mapping, then count distinct days per (who, rbs_category).
+# distinct(who, rbs_what, when) prevents double-counting if a person used
+# two drugs in the same rbs category on the same day (e.g. Oxycodone and
+# Hydrocodone both count as one "opioid" day, not two).
 
 all_drugs_window <- all_drugs |>
   filter(when >= -28, when < 0)
@@ -1009,25 +1033,30 @@ all_drugs_window <- all_drugs |>
 obs_standard <- all_drugs_window |>
   mutate(rbs_what = rbs_what_map[as.character(what)]) |>
   filter(!is.na(rbs_what)) |>
-  distinct(who, rbs_what, when) |>
+  distinct(who, rbs_what, when) |>           # one row per person-category-day
   group_by(who, rbs_what) |>
-  summarize(obs_days = n(), .groups = "drop")
+  summarize(obs_days = n(), .groups = "drop") # count of distinct days with any use
 
-# speedball: days where heroin AND (cocaine or crack) both appear for same who/day
+# Speedball is not a direct entry in all_drugs — infer it as days where
+# BOTH a heroin event AND a cocaine/crack event exist for the same (who, when).
 obs_speedball <- all_drugs_window |>
   filter(as.character(what) %in% c("Heroin", "Cocaine", "Crack")) |>
   mutate(drug_class = if_else(as.character(what) == "Heroin", "heroin", "cocaine")) |>
   distinct(who, when, drug_class) |>
   group_by(who, when) |>
-  filter(n_distinct(drug_class) == 2) |>
+  filter(n_distinct(drug_class) == 2) |>     # keep only days with both classes
   ungroup() |>
   distinct(who, when) |>
   group_by(who) |>
   summarize(obs_days = n(), rbs_what = "speedball", .groups = "drop")
 
+# Combined observed-days table: one row per (who, rbs_what), obs_days = day count
 obs_all <- bind_rows(obs_standard, obs_speedball)
 
 # ── A.3 rbs self-reported days ────────────────────────────────────────────────
+#
+# Flatten rbs to one row per (who, drug category).
+# did_use == "No" forces days to 0 regardless of the days column value.
 
 rbs_self <- rbs |>
   transmute(
@@ -1037,6 +1066,15 @@ rbs_self <- rbs |>
   )
 
 # ── A.4 Per-(who, rbs_what) inconsistency detail ─────────────────────────────
+#
+# Start from analysis_base (randomised participants only) to exclude anyone
+# not in the main analysis. Left-join rbs reports, then observed counts.
+# NAs in obs_days after the join mean zero observed events → fill with 0.
+# Result: one row per (who, drug category), with:
+#   rbs_what      — drug category label (cocaine/heroin/opioid/speed/speedball)
+#   rbs_days      — self-reported days from rbs
+#   obs_days      — observed days from all_drugs in the -28 to 0 window
+#   inconsistency — rbs_days minus obs_days (positive = over-report)
 
 rbs_inconsistency_detail <- analysis_base |>
   select(who) |>
@@ -1052,6 +1090,19 @@ rbs_inconsistency_detail <- analysis_base |>
 
 # ── A.5 Inspection tables ─────────────────────────────────────────────────────
 
+# Table A1: one row per drug category.
+# Columns:
+#   n             — number of (who, drug) rows (≈ participants with rbs data)
+#   mean_rbs_days — average self-reported days across participants
+#   mean_obs_days — average observed days from all_drugs across participants
+#   mean_incons   — average (rbs - obs); positive = systematic over-reporting
+#   pct_exact     — fraction of participants where rbs and obs agree exactly
+#   pct_over      — fraction where rbs > obs (over-report)
+#   pct_under     — fraction where rbs < obs (under-report)
+#
+# What to look for:
+#   - Large positive mean_incons for "opioid" → MOUD inflation in obs_days
+#   - Discrete spikes in Table A2 for CTN-0051 due to bucketed rbs days (0,4,30)
 cat("\n── Table A1: Mean reported vs observed days, by drug category ──\n")
 rbs_inconsistency_detail |>
   group_by(rbs_what) |>
@@ -1067,6 +1118,10 @@ rbs_inconsistency_detail |>
   ) |>
   print()
 
+# Table A2: full frequency table of inconsistency values by drug category.
+# Each row is one (rbs_what, inconsistency_value) pair; n = how many participants
+# had that exact difference. Discrete buckets (multiples of 4 or 30) confirm
+# the CTN-0051 day-categorization artifact.
 cat("\n── Table A2: Inconsistency value distribution by drug category ──\n")
 rbs_inconsistency_detail |>
   group_by(rbs_what, inconsistency) |>
@@ -1075,6 +1130,14 @@ rbs_inconsistency_detail |>
   print(n = Inf)
 
 # ── A.6 Per-who aggregated features ──────────────────────────────────────────
+#
+# Collapse the per-(who, drug) detail into one row per participant.
+# Columns:
+#   rbs_total_abs_inconsistency — sum of |rbs - obs| across all 5 drug categories;
+#                                  a global "how inconsistent is this person" score
+#   rbs_mean_abs_inconsistency  — same but averaged across drug categories
+#   rbs_n_over_reported         — count of drug categories where rbs > obs
+#   rbs_n_under_reported        — count of drug categories where rbs < obs
 
 rbs_inconsistency_feats <- rbs_inconsistency_detail |>
   group_by(who) |>
@@ -1086,6 +1149,9 @@ rbs_inconsistency_feats <- rbs_inconsistency_detail |>
     .groups = "drop"
   )
 
+# Table A3: distribution summary of the per-who features.
+# glimpse shows shape; summary() shows min/median/max to see if the signal
+# is concentrated in a few extreme participants or spread across the sample.
 cat("\n── Table A3: Per-who inconsistency feature summary ──\n")
 glimpse(rbs_inconsistency_feats)
 summary(rbs_inconsistency_feats |> select(-who))
