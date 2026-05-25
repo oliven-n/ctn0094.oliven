@@ -10,6 +10,28 @@
 # Window for all longitudinal data: days -28 (inclusive) to 0
 # (exclusive). Gives exactly 4 of each weekday per person.
 #
+# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+# NOTE TO NAT — CRITICAL: WINDOW ANCHOR MAY BE WRONG
+#
+# ALL longitudinal filters in this file use when >= -28 & when < 0,
+# anchored to randomization (day 0). But induction (first MOUD dose)
+# happens AFTER randomization — participants may be enrolled for days
+# before receiving their first dose. Data in the [0, induction_day)
+# range is pre-treatment baseline that we are currently DISCARDING.
+#
+# If the window should be anchored to induction rather than
+# randomization, every filter(when >= -28, when < 0) in this file
+# is wrong. This affects §5 (all_drugs), pain, rbs_iv, and every
+# other longitudinal section.
+#
+# We do NOT have a direct induction date per participant. It could
+# potentially be inferred from withdrawal_pre_post: the minimum
+# positive `when` where what == "pre", or the transition point
+# pre → post — but this has not been verified. See §19.
+#
+# Resolve with Dr. Balise before modelling. See both .Rmd files §19.
+# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+#
 # SOURCED BY: vignettes/analysis.qmd
 # Sections marked TODO return a who-only tibble until column names
 # are resolved interactively via the glimpse() calls.
@@ -645,24 +667,33 @@ site_feats <- site_masked |>
 
 # ── 19. Withdrawal pre/post ───────────────────────────────────────
 # [Features_To_Include_Accepted_Suggestions.Rmd → withdrawal_pre_post]
+#
+# withdrawal_pre_post has no negative `when` values — all rows are
+# day 0 or later (post-randomization). The "pre" / "post" labels refer
+# to pre- and post-induction (first MOUD dose), not pre-study.
+#
+# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+# NOTE TO NAT — PENDING DR. BALISE RESPONSE (see .Rmd §19):
+#
+# Q1: Can we use pre-induction rows (what == "pre", when >= 0) as
+#     baseline features? They are pre-treatment but post-enrollment.
+#
+# Q2: CRITICAL — should the feature window be anchored to INDUCTION
+#     rather than randomization? If yes, every when >= -28 & when < 0
+#     filter in this file is wrong. We have no induction_date column;
+#     it may be inferable from withdrawal_pre_post (min positive `when`
+#     for what == "pre" per participant) but this is unverified.
+# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+#
+# TODO: implement after Dr. Balise confirms window anchor and dataset usability.
 
-# INSPECT — run this and check column names
-glimpse(withdrawal_pre_post)
-# Expected: who + pre-induction score + post-induction score
-# (COWS or SOWS). May have a "pre" and "post" column or a "when" indicator.
-# TODO: replace column names below
-
-withdrawal_pp_feats <- withdrawal_pre_post |>
-  group_by(who) |>
-  slice(1) |>
-  ungroup() |>
-  transmute(
-    who
-    # TODO:
-    # cows_pre   = <pre_score_col>,
-    # cows_post  = <post_score_col>,
-    # cows_delta = <post_score_col> - <pre_score_col>
-  )
+# withdrawal_pp_feats <- withdrawal_pre_post |>
+#   filter(what == "pre") |>
+#   group_by(who) |>
+#   summarize(
+#     withdrawal_pre  = as.integer(as.character(withdrawal[which.min(when)])),
+#     .groups = "drop"
+#   )
 
 
 # ── 20. Database Notes: Took THEIR / DIFFERENT study drug ─────────
