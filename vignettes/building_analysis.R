@@ -546,15 +546,9 @@ glimpse(qol)
 # TODO: replace column names below
 
 qol_feats <- qol |>
-  group_by(who) |>
-  slice(1) |>  # baseline only (slice_min(when) omitted until `when` column confirmed)
-  ungroup() |>
   transmute(
-    who
-    # TODO:
-    # qol_overall  = <overall_score_col>,
-    # qol_physical = <physical_subscore_col>,
-    # qol_mental   = <mental_subscore_col>
+    who,
+    is_homeless = as.integer(is_homeless == "Yes")
   )
 
 
