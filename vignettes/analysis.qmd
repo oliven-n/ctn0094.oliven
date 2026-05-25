@@ -38,7 +38,6 @@ options(dplyr.summarise.inform = FALSE)
 ```
 
 ```{r build-analysis}
-#| cache: true
 #| include: false
 source("building_analysis.R")
 ```
