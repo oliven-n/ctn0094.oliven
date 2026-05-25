@@ -139,6 +139,26 @@ n_participants <- nrow(analysis_tibble)
 n_features     <- ncol(analysis_tibble) - 2L   # subtract who and project
 ```
 
+```{r tbl-dataset-sample}
+#| tbl-cap: "First six rows of the analysis tibble (selected columns). The full matrix contains `r n_participants` participants and `r n_features` feature columns derived from pre-treatment behavioral and clinical data."
+
+analysis_tibble |>
+  select(
+    who, project, age, is_male,
+    heroin_days, pain_score,
+    withdrawal_pre_score, has_major_dep
+  ) |>
+  slice_head(n = 6) |>
+  kable(
+    col.names = c(
+      "ID", "Study", "Age", "Male",
+      "Heroin days", "Pain score",
+      "Withdrawal score", "Major depression"
+    ),
+    align = "llrrrrr"
+  )
+```
+
 The analysis tibble contains **`r n_participants` participants** and **`r n_features` feature columns** (excluding participant ID and study assignment). Feature domains span substance use history (per-drug days, binary use, longest streak), polydrug days, drug use breadth, demographics, addiction severity (ASI), nicotine dependence (Fagerström), pain (baseline scalar), psychiatric comorbidity, quality of life, housing stability, heroin denial (TLFB × self-report inconsistency), IV drug use risk behavior, withdrawal severity (pre-induction COWS/SOWS scalar), study treatment arm, site, prescribed medication adherence, and cross-domain interactions.
 
 # Discussion
