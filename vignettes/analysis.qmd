@@ -139,11 +139,11 @@ n_participants <- nrow(analysis_tibble)
 n_features     <- ncol(analysis_tibble) - 2L   # subtract who and project
 ```
 
-The current feature matrix contains **`r n_participants` participants** and **`r n_features` feature columns** (excluding participant ID and study). Feature domains that depend on unresolved dataset column names (ASI composites, Fagerstrom score, pain scores, psychiatric diagnoses, quality of life, treatment arm, risk behavior, and withdrawal trajectory) contribute placeholder columns and will be expanded once column names are confirmed via the `glimpse()` calls in `building_analysis.R`.
+The analysis tibble contains **`r n_participants` participants** and **`r n_features` feature columns** (excluding participant ID and study assignment). Feature domains span substance use history (per-drug days, binary use, longest streak), polydrug days, drug use breadth, demographics, addiction severity (ASI), nicotine dependence (Fagerström), pain (baseline scalar), psychiatric comorbidity, quality of life, housing stability, heroin denial (TLFB × self-report inconsistency), IV drug use risk behavior, withdrawal severity (pre-induction COWS/SOWS scalar), study treatment arm, site, prescribed medication adherence, and cross-domain interactions.
 
 # Discussion
 
-The feature matrix described here represents the pre-treatment behavioral and clinical profile for each randomized participant across the three CTN studies. Once the remaining TODO sections are resolved, the full feature set will include substance use history, demographic characteristics, psychiatric comorbidity, pain, nicotine dependence, social risk behavior, IV drug use, withdrawal severity, medication adherence, and study site. These features will be used to train and evaluate predictive models of relapse, with the aim of informing treatment matching for OUD.
+The feature matrix described here represents the pre-treatment behavioral and clinical profile for each randomized participant across the three CTN studies. The full feature set spans substance use, demographics, psychiatric comorbidity, pain, nicotine dependence, social risk behavior, IV drug use, withdrawal severity, medication adherence, and study site. These features will be used to train and evaluate predictive models of relapse, with the aim of informing treatment matching for OUD.
 
 # References {.unnumbered}
 
