@@ -902,7 +902,7 @@ The `psychiatric` dataset provides 18 features. All Yes/No flags are encoded 0/1
 - **`substance_dx_count`**: sum of the 5 non-opioid SUD diagnoses (`has_opiates_dx` excluded — near-universal in this sample). Captures polysubstance disorder burden.
 - **`dep_or_anx_binary`**: 1 if `depression_binary == 1` OR `anxiety_binary == 1`. The internalizing comorbidity cluster is the most replicated psychiatric predictor of OUD relapse; co-occurring depression roughly halves abstinence rates in MOUD trials (Nunes & Levin 2004).
 
-Cross-dataset interactions (psychiatric × pain, psychiatric × benzodiazepine) are in §23.
+Cross-dataset interactions (psychiatric × pain, psychiatric × benzodiazepine) are in §24.
 
 ---
 
@@ -1091,7 +1091,27 @@ Confirmatory factor: Self-medication tendency
 
 ---
 
-# ── 23. Database Notes: Psychiatric × pain and psychiatric × drug interactions ──
+# ── 23. Database Notes: Heroin denial — all_drugs × rbs ─────────────
+
+## all_drugs × rbs
+
+### Dataset Notes
+
+`heroin_days` (from `drug_feats`, §5) counts observed heroin events in the −28 to 0 window from `all_drugs`. The `rbs` dataset (§16) asks participants to self-report how many days they used heroin (and speedball, which contains heroin) in the past 30 days. These two instruments measure the same construct from different angles.
+
+#### Feature proposal
+
+**`heroin_rbs_alldr_incons`** (0/1 integer). Flags participants whose `all_drugs` records show ≥1 heroin day in the window but who denied heroin use in both the heroin and speedball rbs rows. Candidate proxy for minimization of the primary drug of abuse — a known predictor of treatment non-engagement.
+
+Heroin is the best-recorded drug in `all_drugs` (81k events), making false positives from missed records unlikely. Not confounded by MOUD (Buprenorphine/Methadone are distinct drug names) and not an inference artifact. ~5.9% prevalence in the sample (~146 of 2,490 participants).
+
+> **Note on discrepancy vs Appendix A.8**: This section's implementation differs from Appendix A by ~6 participants, likely people who used speedball (heroin+cocaine) and did not separately report heroin use in the heroin rbs row.
+
+Confirmatory factor: Denial/minimization of primary drug of abuse
+
+---
+
+# ── 24. Database Notes: Psychiatric × pain and psychiatric × drug interactions ──
 
 ## psychiatric × pain_main_feats × drug_feats
 
@@ -1117,7 +1137,7 @@ Confirmatory factors: Pain–depression cycle; anxiety-mediated pain catastrophi
 
 ---
 
-# ── 24. Housing stability (cross-dataset) ─────────────────────────
+# ── 25. Database Notes: Housing stability (cross-dataset) ──────────
 
 ## demographics × qol
 
@@ -1142,7 +1162,7 @@ Confirmatory factor: Social determinants of health; housing instability as relap
 
 ---
 
-# ── 25. Database Notes: Withdrawal trajectory ─────────────────────
+# ── 26. Database Notes: Withdrawal trajectory ─────────────────────
 
 ## withdrawal
 
@@ -1156,7 +1176,7 @@ Confirmatory factor: Escalating dependence severity
 
 ---
 
-# ── 26. Database Notes: Medication adherence composite ────────────
+# ── 27. Database Notes: Medication adherence composite ────────────
 
 ## Database Notes
 
@@ -1184,9 +1204,9 @@ Confirmatory factor: Responsibility towards health
 
 ---
 
-# ── 27. Final assembly ────────────────────────────────────────────
+# ── 28. Final assembly ────────────────────────────────────────────
 
-<!-- No source-document content maps here. Technical R implementation of the full left_join sequence and NA-fill logic. See building_analysis.R §27. -->
+<!-- No source-document content maps here. Technical R implementation of the full left_join sequence and NA-fill logic. See building_analysis.R §28. -->
 
 ---
 
@@ -1216,4 +1236,4 @@ The following sections from `Features_To_Include_Accepted_Suggestions.Rmd` have 
 
 > ⚠️ **FLAGGED** — `# visit`: Empty stub in original Rmd (header only, no content). No features. No `building_analysis.R` section.
 
-> ⚠️ **FLAGGED** — `# withdrawal` (stub): Empty stub in original Rmd (header only, no content beneath it). The withdrawal trajectory feature proposal originates in the Database Notes section of the original Rmd and is placed in §25 above via that route. The `# withdrawal` header itself had no content.
+> ⚠️ **FLAGGED** — `# withdrawal` (stub): Empty stub in original Rmd (header only, no content beneath it). The withdrawal trajectory feature proposal originates in the Database Notes section of the original Rmd and is placed in §26 above via that route. The `# withdrawal` header itself had no content.
