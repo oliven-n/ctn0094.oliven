@@ -97,8 +97,9 @@ test_data_wopv  <- testing(data_split_wopv)
 # alcohol_restraint, polydrug_days, drug_breadth, asi_iv_binary,
 # heroin_rbs_alldr_incons, *_inject_days, has_anx_pan_x_benzodiazepine_days,
 # rx_*, depression_binary, anxiety_binary, schizophrenia_binary,
-# dep_or_anx_binary, has_major_dep, has_epilepsy, has_opiates_dx) are picked
-# up automatically by all_numeric_predictors() in step_normalize and step_corr.
+# dep_or_anx_binary, has_major_dep, has_epilepsy, has_opiates_dx, excluding
+# those removed by step_rm() above) are picked up automatically by
+# all_numeric_predictors() in step_normalize and step_corr.
 
 mnar_int_cols_wopv <- c(
   "has_alcol_dx", "has_amphetamines_dx", "has_cannabis_dx",
@@ -180,9 +181,12 @@ lr_recipe_wopv <- recipe(outcome ~ ., data = train_data_wopv) |>
   #    factor from 5 to 6 levels before step_dummy(one_hot = FALSE). This pushes
   #    the polynomial basis from degree 4 to 5, producing an extra column the
   #    GLM cannot estimate. step_unknown has the same effect (+1 → degree 6).
+  #    NOTE: logistic_regression.R does not yet apply this fix (per_day_4/5/6
+  #    appear as NA coefficients there).
   step_novel(all_nominal_predictors(), -all_of(ord_poly_cols_wopv)) |>
   # 2. Pool categories used by < 5% of training rows into "other".
   #    per_day excluded: pooling a rare level would destroy the ordering.
+  #    (This exclusion is unchanged from logistic_regression.R.)
   step_other(all_nominal_predictors(), -all_of(ord_poly_cols_wopv), threshold = 0.05) |>
   # 3. Make NA in nominal columns an explicit level. per_day excluded (same reason).
   step_unknown(all_nominal_predictors(), -all_of(ord_poly_cols_wopv)) |>
