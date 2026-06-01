@@ -28,7 +28,7 @@ library(gtsummary)
 library(knitr)
 conflicts_prefer(dplyr::filter)
 options(dplyr.summarise.inform = FALSE)
-source(here::here("vignettes/building_analysis.R"))
+if (!exists("analysis_tibble")) source(here::here("vignettes/building_analysis.R"))
 
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 # !! NOTE — PROBLEM VARIABLES EXCLUDED FROM THIS MODEL
@@ -42,8 +42,19 @@ source(here::here("vignettes/building_analysis.R"))
 # !!   Pre-treatment medication-type flags proxy for treatment arm assignment.
 # !!   → Excluded via step_rm() below.
 # !!
-# !! muscle_relaxant_days:
+# !! muscle_relaxant_days, muscle_relaxant_binary:
 # !!   Used by too few participants → complete separation in training split.
+# !!   → Excluded via step_rm() below.
+# !!
+# !! fentanyl_streak:
+# !!   Separation–rareness: consecutive-day fentanyl use is rare enough that
+# !!   one cell of the 2×2 outcome table is near-empty, so the MLE does not
+# !!   exist (OR ≈ 98,000; CI 6e-291 to 1.5e+300; p ≈ 0.97 in full model).
+# !!   → Excluded via step_rm() below.
+# !!
+# !! rx_days, analgesic_days, analgesic_binary, has_opiates_dx, antiemetic_binary:
+# !!   Separation: CI spans 50–90 orders of magnitude; MLE does not exist.
+# !!   Point estimates (OR 0.5–4.7) are optimizer artifacts, not real effects.
 # !!   → Excluded via step_rm() below.
 # !!
 # !! per_day polynomial fix (step_novel / step_unknown):
@@ -150,7 +161,17 @@ lr_recipe_wopv <- recipe(outcome ~ ., data = train_data_wopv) |>
     # Leakage: medication-type flags proxy for treatment arm
     methadone_binary, buprenorphine_binary, suboxone_binary,
     # Separation–rareness: too few users for stable estimation
-    muscle_relaxant_days
+    muscle_relaxant_days, muscle_relaxant_binary,
+    # Separation–rareness: consecutive-day fentanyl use too rare for stable estimation
+    fentanyl_streak,
+    # Separation: CI spans ~85 orders of magnitude; point estimate is optimizer artifact
+    rx_days,
+    # Separation: analgesic use rare enough to empty a cell in the outcome table
+    analgesic_days, analgesic_binary,
+    # Separation: opiates dx and antiemetic use too sparse for stable estimation
+    has_opiates_dx, antiemetic_binary, antiemetic_days,
+    # Separation: rx_any_binary sibling of rx_days (same mechanism)
+    rx_any_binary
   ) |>
 
   # Remove known zero-variance columns before any processing.
@@ -277,3 +298,4 @@ lr_test_metrics_wopv |>
     col.names = c("Metric", "Value"),
     caption   = "Test-set performance — no problem variables."
   )
+
