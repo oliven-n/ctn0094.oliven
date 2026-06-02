@@ -23,6 +23,8 @@ knitr:
 editor: source
 bibliography: [references.bib, packages.bib]
 csl: apa.csl
+execute:
+  cache: true
 ---
 
 ```{r load-packages}
@@ -40,6 +42,7 @@ options(dplyr.summarise.inform = FALSE)
 
 ```{r build-analysis}
 #| include: false
+#| cache-extra: !expr digest::digest(readLines("building_analysis.R"))
 # source() runs the entire script in place — every object it creates (analysis_tibble,
 # analysis_base, all_drugs_filtered, etc.) lands in this document's R environment.
 # It's not like Python's `from module import x` (selective). It's closer to
@@ -52,6 +55,7 @@ source("building_analysis.R")
 
 ```{r logistic-regression}
 #| include: false
+#| cache-extra: !expr digest::digest(readLines("logistic_regression.R"))
 # Same pattern as build-analysis: runs logistic_regression.R in place, making
 # all fitted model objects available to the Results section below.
 source("logistic_regression.R")
@@ -59,10 +63,17 @@ source("logistic_regression.R")
 
 ```{r logistic-regression-wopv}
 #| include: false
+#| cache-extra: !expr digest::digest(readLines("logistic_regression_without_problem_vars.R"))
 # Sources the cleaned model (problem variables excluded). The guard inside the
 # script skips rebuilding analysis_tibble since logistic_regression.R already
 # created it. All _wopv objects land in this document's R environment.
 source("logistic_regression_without_problem_vars.R")
+```
+
+```{r logistic-regression-wopv-kfold}
+#| include: false
+#| cache-extra: !expr digest::digest(readLines("logistic_regression_wopv_kfold.R"))
+source("logistic_regression_wopv_kfold.R")
 ```
 
 # Abstract
@@ -315,6 +326,54 @@ bind_cols(
     digits    = 3,
     col.names = c("Metric", "Train", "Test")
   )
+```
+
+### Cross-Validation
+
+Ten-fold cross-validation was applied to the cleaned model on the training set to obtain a more stable performance estimate. Each fold held out approximately 10% of training observations (~187 participants); every training observation was held out exactly once. Cross-validated metrics are reported as means across the 10 folds (@tbl-lr-cv-metrics). Fold-to-fold variance in AUC was small, reflecting consistent model behavior across training subsets rather than sensitivity to any particular split.
+
+```{r tbl-lr-cv-metrics}
+#| tbl-cap: "Ten-fold cross-validated performance of the logistic regression model (without problem variables). Mean and standard error across folds."
+
+rs_results |>
+  collect_metrics() |>
+  mutate(.metric = c("Accuracy", "ROC AUC", "Sensitivity", "Specificity")) |>
+  select(.metric, mean, std_err) |>
+  kable(
+    digits    = 3,
+    col.names = c("Metric", "Mean", "SE")
+  )
+```
+
+```{r fig-lr-cv-roc}
+#| fig-cap: "ROC curves from 10-fold cross-validation. Gray lines show individual fold curves; black line shows the pooled overall curve."
+#| fig-width: 5
+#| fig-height: 5
+
+fold_curves   <- rs_results |>
+  collect_predictions() |>
+  group_by(id) |>
+  roc_curve(truth = outcome, .pred_0, event_level = "first")
+
+overall_curve <- rs_results |>
+  collect_predictions() |>
+  roc_curve(truth = outcome, .pred_0, event_level = "first")
+
+ggplot() +
+  geom_path(
+    data = fold_curves,
+    aes(x = 1 - specificity, y = sensitivity, group = id),
+    color = "gray70", linewidth = 0.5, alpha = 0.7
+  ) +
+  geom_path(
+    data = overall_curve,
+    aes(x = 1 - specificity, y = sensitivity),
+    color = "black", linewidth = 1.2
+  ) +
+  geom_abline(lty = 3, color = "gray40") +
+  coord_equal() +
+  labs(x = "1 - Specificity", y = "Sensitivity") +
+  theme_minimal(base_size = 11)
 ```
 
 # Discussion

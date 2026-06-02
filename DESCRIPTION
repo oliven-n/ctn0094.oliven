@@ -25,5 +25,7 @@ Suggests:
     table1,
     tibble,
     tidymodels,
-    tidyverse
+    tidyverse,
+    doParallel,
+    digest
 VignetteBuilder: quarto
