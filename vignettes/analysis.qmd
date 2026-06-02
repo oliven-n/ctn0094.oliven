@@ -102,6 +102,20 @@ All longitudinal features are derived from a 28-day pre-randomization window (da
 
 All models predict a binary relapse outcome from the pre-treatment feature matrix. Candidate models span interpretable baselines through high-capacity ensemble methods. Final model selection will be based on cross-validated area under the ROC curve (AUC-ROC).
 
+::: {.callout-important title="NOTE TO SELF — REMOVE BEFORE SUBMISSION"}
+
+**Metric-priority reasoning (settle before writing the Discussion):**
+
+- **Model selection prioritizes AUC-ROC** — threshold-free, and the convention adopted here. AUC is *symmetric* in sensitivity and specificity, so it encodes no operating preference, and a sens/spec priority does **not** change which model is selected.
+
+- **Specificity is the operating-point priority in this design.** With relapse coded as the positive class, specificity = correctly identifying the participants who will *not* relapse — i.e., **identifying people whose pre-treatment profile is genuinely promising for treatment**. The costly error to minimize is the false positive (flagging a true non-relapser as high-risk), so a specificity-favoring operating point is the defensible choice. *[Suggested cites — confirm fit before using: Vickers & Elkin (2006), "Decision curve analysis: a novel method for evaluating prediction models," Med Decis Making 26(6):565–574 — formalizes choosing the operating point by the FP:FN cost ratio (the direct support for cost-weighting toward specificity); Wynants et al. (2019), "Three myths about risk thresholds for prediction models," BMC Med 17:192 — thresholds should reflect error costs, not be arbitrary; Pepe (2003), The Statistical Evaluation of Medical Tests — foundational sens/spec reference. SUD domain context: Acion et al. (2017), "Use of a machine learning framework to predict substance use disorder treatment success," PLoS ONE 12(4):e0175383. CAVEAT: the SUD ML literature is split — some opioid-relapse/dropout models deliberately prioritize SENSITIVITY (don't-miss-a-relapser); be ready to justify the specificity choice against that.]*
+
+- **Implementing the specificity priority:** AUC tuning is neutral, and the current sens/spec are reported at the **Youden-J cutoff, which weights sensitivity and specificity equally** — so neither step yet encodes this preference. To prioritize specificity, apply a cost function at the operating point: either (a) **re-tune** hyperparameters on a cost-sensitive objective (heavier; the thresholded objective can destabilize selection), or (b) **more cost-effectively, a post-hoc threshold shift** on the same AUC-selected model (cheap, no re-tuning). Prefer (b).
+
+- Word-choice caveat: this is a *prognostic relapse-risk* model, not a *treatment-benefit* model (treatment arm was excluded), so keep causal "benefit of the drug" language out of the final claims.
+
+:::
+
 ### Logistic Regression
 
 Standard binary logistic regression models the log-odds of relapse as a linear combination of predictors. Used as the interpretable baseline. Estimated via maximum likelihood; no regularization. Implemented in `tidymodels` using the `glm` engine.
