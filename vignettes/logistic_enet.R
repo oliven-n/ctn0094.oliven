@@ -4,6 +4,34 @@ library(doParallel)
 if (!exists("train_data")) {
   source(here::here("vignettes/logistic_regression.R"))
 }
+
+# ── Helpers (shared by both sections) ────────────────────────────────────────
+# 0.5 is a useless classification cutoff here: the ~74% relapse base rate pushes
+# nearly all predicted probabilities above 0.5, so a 0.5 threshold labels almost
+# everyone "relapse" (sens ≈ 1, spec ≈ 0). Instead we choose the Youden-J cutoff
+# (the threshold maximizing sens + spec - 1) on the TRAINING ROC curve, then apply
+# that SAME cutoff to both train and test (choose on train, report on test).
+
+# Youden-J optimal probability cutoff from a tibble with (.pred_1, outcome).
+youden_cutoff <- function(preds) {
+  preds |>
+    roc_curve(truth = outcome, .pred_1, event_level = "second") |>
+    dplyr::mutate(youden_j = sensitivity + specificity - 1) |>
+    dplyr::slice_max(youden_j, n = 1, with_ties = FALSE) |>
+    dplyr::pull(.threshold)
+}
+
+# sens + spec at an arbitrary probability cutoff (relapse = "1" = second level).
+sens_spec_at <- function(preds, cutoff) {
+  labeled <- preds |>
+    dplyr::mutate(.pred_cut = factor(dplyr::if_else(.pred_1 >= cutoff, "1", "0"),
+                                     levels = c("0", "1")))
+  dplyr::bind_rows(
+    sens(labeled, truth = outcome, estimate = .pred_cut, event_level = "second"),
+    spec(labeled, truth = outcome, estimate = .pred_cut, event_level = "second")
+  )
+}
+
 # ── Elastic Net Penalty → Pure Ridge ─────────────────────────────────────────
 # Everything in THIS section fits an ELASTIC NET logistic regression: both the
 # penalty (λ) and the mixture (L1/L2 blend) are tuned over a joint 50×5 grid.
@@ -88,10 +116,6 @@ relapse_pred_enet <-
   predict(enet_fit, train_data, type = "prob") |>
   bind_cols(train_data |> select(outcome))
 
-relapse_pred_enet_class <-
-  predict(enet_fit, train_data, type = "class") |>
-  bind_cols(train_data |> select(outcome))
-
 # ROC/AUC Plot
 relapse_pred_enet |>
   roc_curve(
@@ -111,21 +135,11 @@ relapse_pred_enet |>
     event_level = "second"
   )
 
-# Sensitivity
-relapse_pred_enet_class |>
-  sens(
-    truth       = outcome,
-    estimate    = .pred_class,
-    event_level = "second"
-  )
+# Sensitivity & Specificity at the Youden-J cutoff (chosen on TRAIN, not 0.5)
+enet_cut <- youden_cutoff(relapse_pred_enet)
+enet_cut
 
-# Specificity
-relapse_pred_enet_class |>
-  spec(
-    truth       = outcome,
-    estimate    = .pred_class,
-    event_level = "second"
-  )
+sens_spec_at(relapse_pred_enet, enet_cut)
 
 # Look at Model Metrics -----
 # last_fit() fits the final best model to the training set and evaluates the test
@@ -136,14 +150,9 @@ enet_last_fit <- enet_final_wf |> last_fit(data_split)
 # accuracy and roc_auc on the held-out test set
 collect_metrics(enet_last_fit)
 
-# sped pulled out separately — it's the clinically important metric
-enet_last_fit |>
-  collect_predictions() |>
-  specificity(
-    truth       = outcome,
-    estimate    = .pred_class,
-    event_level = "second"
-  )
+# Test sens + spec at the SAME train-chosen cutoff (choose on train, report on
+# test — never tuned on test). spec is the clinically important one here.
+sens_spec_at(collect_predictions(enet_last_fit), enet_cut)
 
 # Look at Variable Importance ------
 # Here's where LASSO beats knn: the model IS its coefficients, so importance is
@@ -214,10 +223,6 @@ relapse_pred_lasso <-
   predict(lasso_fit, train_data, type = "prob") |>
   bind_cols(train_data |> select(outcome))
 
-relapse_pred_lasso_class <-
-  predict(lasso_fit, train_data, type = "class") |>
-  bind_cols(train_data |> select(outcome))
-
 relapse_pred_lasso |>
   roc_curve(truth = outcome, .pred_1, event_level = "second") |>
   autoplot()
@@ -225,20 +230,19 @@ relapse_pred_lasso |>
 relapse_pred_lasso |>
   roc_auc(truth = outcome, .pred_1, event_level = "second")
 
-relapse_pred_lasso_class |>
-  sens(truth = outcome, estimate = .pred_class, event_level = "second")
+# Sensitivity & Specificity at the Youden-J cutoff (chosen on TRAIN, not 0.5)
+lasso_cut <- youden_cutoff(relapse_pred_lasso)
+lasso_cut
 
-relapse_pred_lasso_class |>
-  spec(truth = outcome, estimate = .pred_class, event_level = "second")
+sens_spec_at(relapse_pred_lasso, lasso_cut)
 
 # Look at Model Metrics -----
 lasso_last_fit <- lasso_final_wf |> last_fit(data_split)
 
 collect_metrics(lasso_last_fit)
 
-lasso_last_fit |>
-  collect_predictions() |>
-  specificity(truth = outcome, estimate = .pred_class, event_level = "second")
+# Test sens + spec at the SAME train-chosen cutoff (choose on train, report on test)
+sens_spec_at(collect_predictions(lasso_last_fit), lasso_cut)
 
 # Look at Variable Importance ------
 lasso_fit |>
