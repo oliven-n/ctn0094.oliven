@@ -169,7 +169,7 @@ enet_fit |>
   extract_fit_parsnip() |>
   tidy()
 
-is # Review Fit on the Test Data ------
+# Review Fit on the Test Data ------
 relapse_pred_enet_test <-
   predict(enet_fit, test_data, type = "prob") |>
   bind_cols(test_data |> select(outcome))
@@ -245,13 +245,27 @@ collect_metrics(lasso_last_fit)
 sens_spec_at(collect_predictions(lasso_last_fit), lasso_cut)
 
 # Look at Variable Importance ------
-lasso_fit |>
-  extract_fit_parsnip() |>
-  vip(num_features = 20)
+# vip() does not pin to the workflow's selected penalty — it reads a different
+# lambda on the glmnet path and shows more predictors than actually survived.
+# Instead, extract coefficients AT the selected penalty so importance correctly
+# reflects the sparse model that produced the reported AUC.
+lasso_coef <- tibble::tibble(
+  term     = rownames(coef(extract_fit_engine(lasso_fit), s = lasso_favorite$penalty)),
+  estimate = as.vector(coef(extract_fit_engine(lasso_fit), s = lasso_favorite$penalty))
+) |>
+  dplyr::filter(term != "(Intercept)", estimate != 0) |>
+  dplyr::mutate(importance = abs(estimate)) |>
+  dplyr::arrange(dplyr::desc(importance))
 
-lasso_fit |>
-  extract_fit_parsnip() |>
-  tidy()
+ggplot(lasso_coef, aes(x = importance, y = reorder(term, importance))) +
+  geom_col(fill = "grey40") +
+  labs(x = "Importance (|coefficient| at selected λ)",
+       y = NULL,
+       title = paste0("Pure LASSO: ", nrow(lasso_coef),
+                      " surviving predictors (of ~107)")) +
+  theme_minimal()
+
+lasso_coef   # raw coefficient table for the surviving terms
 
 # Review Fit on the Test Data ------
 relapse_pred_lasso_test <-
