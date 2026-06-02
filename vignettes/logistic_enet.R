@@ -102,8 +102,10 @@ relapse_pred_enet |>
   autoplot()
 
 # ROC/AUC Score table
+# roc_auc() returns the single auc number and has one row with .metric/.estimator/.estimate
+# roc_curve(), like below was before i changed, is the ugly table with everryyy pt
 relapse_pred_enet |>
-  roc_curve(
+  roc_auc(
     truth = outcome,
     .pred_1,
     event_level = "second"
@@ -134,10 +136,10 @@ enet_last_fit <- enet_final_wf |> last_fit(data_split)
 # accuracy and roc_auc on the held-out test set
 collect_metrics(enet_last_fit)
 
-# sensitivity pulled out separately — it's the clinically important metric
+# sped pulled out separately — it's the clinically important metric
 enet_last_fit |>
   collect_predictions() |>
-  sensitivity(
+  specificity(
     truth       = outcome,
     estimate    = .pred_class,
     event_level = "second"
