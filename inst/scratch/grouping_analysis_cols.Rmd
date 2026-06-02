@@ -50,6 +50,55 @@ col_audit |> kable(digits = 1)
 
 ---
 
+# Missingness by Study
+
+**Purpose:** Test MCAR assumptions. True MCAR means missingness is independent of all observed variables, including study. If NA rate differs systematically across studies, missingness is at minimum MAR (predictable from study membership) and usually MNAR (the study structurally didn't collect it). These require `step_indicate_na()` + impute, not bare imputation.
+
+```{r missingness-by-study}
+na_vars <- names(analysis_tibble)[sapply(analysis_tibble, function(x) any(is.na(x)))]
+
+results <- map_dfr(na_vars, function(col) {
+  analysis_tibble |>
+    group_by(project) |>
+    summarise(
+      n_total = n(),
+      n_na    = sum(is.na(.data[[col]])),
+      pct_na  = round(mean(is.na(.data[[col]])) * 100, 1),
+      .groups = "drop"
+    ) |>
+    mutate(column = col)
+})
+
+wide <- results |>
+  pivot_wider(
+    id_cols     = column,
+    names_from  = project,
+    values_from = c(n_na, pct_na),
+    names_glue  = "{.value}_p{project}"
+  )
+
+cat("Study sizes:\n")
+print(count(analysis_tibble, project))
+cat("\n")
+wide |> kable(caption = "NA counts and % by study for all variables with any NA.")
+```
+
+**Key findings (source of MCAR → MNAR reclassifications):**
+
+| Variable(s) | Study 27 % NA | Study 30 % NA | Study 51 % NA | Classification |
+|---|---|---|---|---|
+| `job`, `is_living_stable`, `education`, `marital`, `housing_stability_ord` | **87.2%** | 0% | ≈0% | **MNAR** — study 27 didn't collect demographics |
+| `has_*_dx`, `substance_dx_count` | 13.8% | **100%** | 0% | **MNAR** — study 30 structural; study 27 item-level mixed |
+| `is_homeless` | **100%** | **100%** | 0% | **MNAR** — only study 51 collected it |
+| `pain_score` | 1.7% | 0% | 0% | MCAR — item-level within study 27 |
+| `is_smoker`, `ftnd_score`, `per_day` | 0.4% | 0% | 0–0.4% | MCAR — scattered item-level |
+| `has_schizophrenia`, `has_bipolar`, etc. | 0.1–0.2% | 0–0.2% | 0% | MCAR — item-level |
+| IV variables (`iv_days_total` etc.) | 0% | 0% | 0.2% | MCAR — 1 participant in study 51 |
+
+**Recipe impact:** The 44%-missing group (`job`, `education`, `marital`, `is_living_stable`, `housing_stability_ord`) was incorrectly labeled MCAR in the original recipe. These are reclassified to MNAR and now get `step_indicate_na()` in `logistic_regression.R`. The resulting `na_ind_*` flags have φ ≈ 0.88 with the `project_X27` dummy — below the 0.90 `step_corr` threshold — so they survive and carry info about the ~12.8% of study 27 participants who *did* have demographics recorded (different sites/recruitment waves). Results saved to `inst/scratch/missingness_by_study.csv`.
+
+---
+
 # Spot Checks for Uncertain Columns
 
 ## Potential Zero-Variance Columns
@@ -414,19 +463,19 @@ Groups used below:
 **Group:** `nominal_factor` — `<fct>`. Unordered. One-hot encode. See factor levels spot check for full level list.
 
 ## job
-**Group:** `nominal_factor` + `mcar` — `<fct>`, has NAs. kNN impute first, then one-hot encode.
+**Group:** `nominal_factor` + ~~`mcar`~~ → **`structural_na`** — `<fct>`, 87.2% NA in study 27, ≈0% elsewhere. Study 27 didn't collect demographics. `step_indicate_na()` + `step_impute_mode()`, then one-hot encode.
 
 ## is_living_stable
-**Group:** `mcar` — `<int>`, 0/1, has NAs. kNN impute (or mode impute).
+**Group:** ~~`mcar`~~ → **`structural_na`** — `<int>`, 0/1, 87.2% NA in study 27, 0% elsewhere. Study 27 didn't collect demographics. `step_indicate_na()` + `step_impute_median()`.
 
 ## education
-**Group:** `nominal_factor` + `mcar` — `<fct>`, has NAs. kNN impute, then one-hot encode.
+**Group:** `nominal_factor` + ~~`mcar`~~ → **`structural_na`** — `<fct>`, 87.2% NA in study 27, 0% elsewhere. `step_indicate_na()` + `step_impute_mode()`, then one-hot encode.
 
 ## marital
-**Group:** `nominal_factor` + `mcar` + `check_redundant` — `<fct>`, has NAs. See redundancy check vs `is_married`. If keeping, kNN impute then one-hot encode.
+**Group:** `nominal_factor` + ~~`mcar`~~ → **`structural_na`** + `check_redundant` — `<fct>`, 87.2% NA in study 27, 0.3% in study 30. See redundancy check vs `is_married`. `step_indicate_na()` + `step_impute_mode()`, then one-hot encode.
 
 ## is_married
-**Group:** `mcar` + `check_redundant` — `<int>`, 0/1, has NAs. Likely derived from `marital` → redundant if `marital` is in the recipe. See redundancy spot check.
+**Group:** `check_redundant` + **`zero_variance`** — `<int>`, all zeros (step_zv removes it). Derived from `marital` (bug: "Married or Partnered" != "married" string match → always 0). Removed automatically by `step_zv()` before any imputation step is reached.
 
 ## is_male
 **Group:** `no_treatment` — `<int>`, 0/1. No NAs expected.
@@ -501,7 +550,7 @@ Groups used below:
 **Group:** `structural_na` — `<int>`, MNAR. 77% NA (study-level, not item-level). 570 observed values worth keeping. `step_indicate_na()` + `step_impute_median()`.
 
 ## housing_stability_ord
-**Group:** `ordered_factor` + `mcar` — `<ord>`, has NAs. kNN impute first, then `step_ordinalscore()` (or polynomial contrasts depending on levels). See ordered levels spot check.
+**Group:** `ordered_factor` + ~~`mcar`~~ → **`structural_na`** — `<ord>`, 87.2% NA in study 27, 0% elsewhere. Study 27 didn't collect demographics. `step_indicate_na()` + `step_impute_mode()`, then `step_ordinalscore()` (linear spacing defensible for unstable/mid/stable). See ordered levels spot check.
 
 ## treatment_arm
 **Group:** `nominal_factor` — `<fct>`. No NAs expected. One-hot encode. See factor levels spot check.

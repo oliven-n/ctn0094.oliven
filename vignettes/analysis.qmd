@@ -57,6 +57,14 @@ source("building_analysis.R")
 source("logistic_regression.R")
 ```
 
+```{r logistic-regression-wopv}
+#| include: false
+# Sources the cleaned model (problem variables excluded). The guard inside the
+# script skips rebuilding analysis_tibble since logistic_regression.R already
+# created it. All _wopv objects land in this document's R environment.
+source("logistic_regression_without_problem_vars.R")
+```
+
 # Abstract
 
 This study uses data from three NIDA Clinical Trials Network studies (CTN-0027, CTN-0030, CTN-0051) to build a predictive model of treatment response in people with opioid use disorder (OUD). We construct a pre-treatment feature matrix from behavioral, substance use, demographic, and clinical data in the 28 days before randomization, and evaluate whether these features predict relapse during the treatment period.
@@ -271,13 +279,51 @@ bind_cols(
   )
 ```
 
+### Exclusion of Structurally Sparse Predictors
+
+```{r wopv-ci-check}
+#| include: false
+wopv_ci_check <- lr_fit_wopv |>
+  tidy(exponentiate = TRUE) |>
+  mutate(
+    conf.low    = exp(log(estimate) - 1.96 * std.error),
+    conf.high   = exp(log(estimate) + 1.96 * std.error),
+    log10_width = log10(conf.high / conf.low)
+  ) |>
+  filter(!is.na(estimate), term != "(Intercept)")
+
+wopv_top3_ci <- wopv_ci_check |> slice_max(log10_width, n = 3)
+```
+
+A second logistic regression was fitted after excluding predictors identified as problematic on substantive or numerical grounds. Five predictors were excluded for leakage: `took_own_study_drug`, `took_other_study_drug`, `methadone_binary`, `buprenorphine_binary`, and `suboxone_binary` encode treatment arm assignment directly or by proxy, introducing post-randomization information into the pre-treatment predictor set.
+
+The remaining exclusions addressed complete separation. Inspection of the baseline coefficient table revealed predictors with Wald confidence intervals spanning 25–90 orders of magnitude — the diagnostic signature of a non-existent maximum likelihood estimate. When a predictor nearly perfectly partitions the binary outcome, the log-likelihood has no finite maximum and the iteratively reweighted least squares optimizer terminates at an arbitrarily large value; the resulting point estimate is numerically meaningless regardless of its apparent plausibility. All such predictors were sparse drug-use indicators (analgesic, antiemetic, and muscle relaxant use and their binary counterparts) with very few observed events in the 28-day pre-treatment window.
+
+Exclusion proceeded over three iterative rounds. In each round, all predictors with confidence intervals spanning more than approximately 10 orders of magnitude were removed, the model was refitted, and the coefficient table was re-examined. Predictors appearing in subsequent rounds arose exclusively from correlated pairs (Pearson *r* > 0.90 at the `step_corr` threshold): removing the first member of a pair permitted the second to pass the pairwise correlation filter, where it exhibited the same separation pattern. This sequential structure confirms that the final stable configuration reflects genuine structural sparsity rather than an incidental local solution — every excluded variable was either directly sparse or a downstream consequence of direct sparsity.
+
+Following three rounds of exclusion totaling 15 predictors (beyond `treatment_arm`, which is excluded from both models), all `r nrow(wopv_ci_check)` estimable predictors had well-bounded Wald confidence intervals. The three widest spanned `r round(wopv_top3_ci$log10_width[1], 1)`, `r round(wopv_top3_ci$log10_width[2], 1)`, and `r round(wopv_top3_ci$log10_width[3], 1)` orders of magnitude (`r wopv_top3_ci$term[1]`, `r wopv_top3_ci$term[2]`, and `r wopv_top3_ci$term[3]`, respectively); all remaining intervals were narrower. Seven additional terms had missing coefficient estimates due to exact multicollinearity in the encoded design matrix (rank deficiency); these reflect structural properties of the one-hot and polynomial encodings and are not separation.
+
+```{r tbl-lr-wopv-metrics}
+#| tbl-cap: "Model performance after exclusion of structurally sparse predictors. Training and test sets from the same stratified 75/25 split (seed 12345) as the baseline logistic regression, enabling direct comparison."
+
+bind_cols(
+  lr_metrics_wopv      |> rename(Train = .estimate),
+  lr_test_metrics_wopv |> select(Test = .estimate)
+) |>
+  mutate(.metric = c("Accuracy", "ROC AUC", "Sensitivity", "Specificity")) |>
+  kable(
+    digits    = 3,
+    col.names = c("Metric", "Train", "Test")
+  )
+```
+
 # Discussion
 
 The feature matrix described here represents the pre-treatment behavioral and clinical profile for each randomized participant across the three CTN studies. The full feature set spans substance use, demographics, psychiatric comorbidity, pain, nicotine dependence, social risk behavior, IV drug use, withdrawal severity, medication adherence, and study site. These features will be used to train and evaluate predictive models of relapse, with the aim of informing treatment matching for OUD.
 
 The preprocessing recipe handles two distinct classes of missingness separately: (1) structural MNAR missingness, where entire studies did not collect certain variables (e.g., substance use disorder diagnosis flags, homeless status), addressed by creating an explicit is-missing indicator column via `step_indicate_na()` before imputing, so the model can learn from the missingness pattern itself; and (2) random MCAR missingness, affecting a small number of participants across variables such as pain score and withdrawal severity, addressed by median or mode imputation with no indicator. Additional preprocessing steps include `step_ordinalscore()` for ordered factors with defensible equal spacing, polynomial contrast encoding for cigarettes-per-day, and `step_corr()` to remove predictors with pairwise correlation above 0.90, which eliminates redundant pairs such as the two withdrawal severity columns derived from the same single observation.
 
-The baseline logistic regression achieved a ROC AUC of `r round(lr_metrics$.estimate[lr_metrics$.metric == "roc_auc"], 3)` on the training set and `r round(lr_test_metrics$.estimate[lr_test_metrics$.metric == "roc_auc"], 3)` on the held-out test set — a mild to moderate drop consistent with overfitting expected from fitting an unregularized model to 100+ predictors, but still reflecting meaningful discriminative ability above chance. An initial model that included `treatment_arm` as a predictor yielded a test-set AUC of approximately 0.693; removing it (to avoid conditioning on post-randomization assignment) reduced test AUC by roughly 0.004, confirming that the feature contributed a small but real signal — likely through its correlation with study site and MOUD eligibility criteria rather than any genuine clinical mechanism. One result that warrants further investigation is the odds ratio for CTN-0030 study membership (OR ≈ 10.5), which is implausibly large and likely reflects a study-level confounder — perhaps differences in outcome ascertainment, follow-up duration, or population composition across trials — rather than a genuine clinical signal. We are not sure why this might be but are looking into it as a next step.
+The baseline logistic regression achieved a ROC AUC of `r round(lr_metrics$.estimate[lr_metrics$.metric == "roc_auc"], 3)` on training and `r round(lr_test_metrics$.estimate[lr_test_metrics$.metric == "roc_auc"], 3)` on test — a mild to moderate drop consistent with overfitting expected from fitting an unregularized model to 100+ predictors, but still reflecting meaningful discriminative ability above chance. The large estimated associations for study membership (CTN-0030: OR ≈ 42, CTN-0027: OR ≈ 4 in the cleaned model) likely reflect between-study heterogeneity in outcome ascertainment or follow-up design rather than pre-treatment clinical effects, consistent with the challenge of pooling trials with distinct protocols.
 
 # References {.unnumbered}
 
