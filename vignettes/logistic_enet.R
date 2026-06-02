@@ -169,7 +169,7 @@ enet_fit |>
   extract_fit_parsnip() |>
   tidy()
 
-# Review Fit on the Test Data ------
+is # Review Fit on the Test Data ------
 relapse_pred_enet_test <-
   predict(enet_fit, test_data, type = "prob") |>
   bind_cols(test_data |> select(outcome))
@@ -261,4 +261,145 @@ relapse_pred_lasso_test <-
 relapse_pred_lasso_test |>
   roc_curve(truth = outcome, .pred_1, event_level = "second") |>
   autoplot()
+
+
+# ── Shrinkage Plots (given mixture settings) ─────────────────────────────────
+# Lambda-axis diagnostics. One glmnet path fit (at a chosen mixture) gives BOTH
+# the per-variable coefficient paths and the per-lambda metric paths.
+library(glmnet)
+library(broom)
+library(plotly)
+
+# Bake the recipe once -> numeric predictor matrix + outcome vector for glmnet.
+# (who has role "ID" and outcome is dropped by all_predictors(), so X is clean.)
+bake_xy <- function(prepped, data) {
+  list(
+    X = bake(prepped, new_data = data, all_predictors(), composition = "matrix"),
+    y = bake(prepped, new_data = data, all_outcomes()) |> dplyr::pull(1)
+  )
+}
+
+enet_prep <- prep(enet_recipe, training = train_data)
+enet_tr   <- bake_xy(enet_prep, train_data)
+enet_te   <- bake_xy(enet_prep, test_data)
+
+# glmnet paths at each selected mixture (alpha = mixture): 0 = ridge, 1 = lasso.
+enet_path  <- glmnet(enet_tr$X, enet_tr$y, family = "binomial", alpha = 0)
+lasso_path <- glmnet(enet_tr$X, enet_tr$y, family = "binomial", alpha = 1)
+
+# Coefficient Paths (ISLR style) ----
+# Highlight top 5 terms by max |coef|, grey the rest; dashed line at chosen lambda.
+plot_coef_paths <- function(glmnet_fit, chosen_penalty, title) {
+  coef_df <- tidy(glmnet_fit) |> dplyr::filter(term != "(Intercept)")
+  top_terms <- coef_df |>
+    dplyr::group_by(term) |>
+    dplyr::summarise(m = max(abs(estimate)), .groups = "drop") |>
+    dplyr::slice_max(m, n = 5) |>
+    dplyr::pull(term)
+  coef_df <- dplyr::mutate(coef_df, highlight = ifelse(term %in% top_terms, term, "other"))
+  ggplot() +
+    geom_line(data = dplyr::filter(coef_df, highlight == "other"),
+              aes(lambda, estimate, group = term), colour = "grey80", linewidth = 0.3) +
+    geom_line(data = dplyr::filter(coef_df, highlight != "other"),
+              aes(lambda, estimate, colour = highlight, group = term), linewidth = 0.9) +
+    scale_x_log10() +
+    scale_colour_manual(values = c("#D55E00", "#0072B2", "#E69F00", "#009E73", "#CC79A7")) +
+    geom_vline(xintercept = chosen_penalty, linetype = "dashed") +
+    labs(x = "Penalty (lambda, log scale)", y = "Standardized coefficient",
+         colour = "Top |coef|", title = title) +
+    theme_minimal()
+}
+
+# Ridge (mixture 0): smooth shrinkage, nothing hits exactly 0.
+plot_coef_paths(enet_path, enet_favorite$penalty,
+                "Elastic net (mixture = 0, ridge): coefficient paths")
+# Pure LASSO (mixture 1): the ISLR picture - terms peel off to exactly 0.
+plot_coef_paths(lasso_path, lasso_favorite$penalty,
+                "Pure LASSO (mixture = 1): coefficient paths")
+
+# Metric Paths vs Lambda (train vs test) ----
+# At each lambda: roc_auc (threshold-free) + sens/spec read at the Youden-J cutoff
+# CHOSEN ON TRAIN at that lambda, then applied to both sets. roc_auc ignores the
+# cutoff; sens/spec do not.
+enet_p_tr <- predict(enet_path, enet_tr$X, type = "response")  # [n x nlambda] = P(relapse)
+enet_p_te <- predict(enet_path, enet_te$X, type = "response")
+enet_lams <- enet_path$lambda
+
+# per-lambda Youden cutoff, chosen on TRAIN
+enet_path_cuts <- vapply(seq_along(enet_lams), function(j) {
+  tibble::tibble(truth = enet_tr$y, .p = enet_p_tr[, j]) |>
+    roc_curve(truth, .p, event_level = "second") |>
+    dplyr::mutate(jx = sensitivity + specificity - 1) |>
+    dplyr::slice_max(jx, n = 1, with_ties = FALSE) |>
+    dplyr::pull(.threshold)
+}, numeric(1))
+
+metrics_along_path <- function(p_mat, y, cuts, lams, set_label) {
+  purrr::map_dfr(seq_along(lams), function(j) {
+    p   <- p_mat[, j]
+    lab <- factor(dplyr::if_else(p >= cuts[j], "1", "0"), levels = c("0", "1"))
+    tibble::tibble(
+      lambda  = lams[j],
+      set     = set_label,
+      roc_auc = yardstick::roc_auc_vec(y, p,   event_level = "second"),
+      sens    = yardstick::sens_vec(   y, lab, event_level = "second"),
+      spec    = yardstick::spec_vec(   y, lab, event_level = "second")
+    )
+  })
+}
+
+enet_metric_df <- dplyr::bind_rows(
+  metrics_along_path(enet_p_tr, enet_tr$y, enet_path_cuts, enet_lams, "Training"),
+  metrics_along_path(enet_p_te, enet_te$y, enet_path_cuts, enet_lams, "Testing")
+) |>
+  tidyr::pivot_longer(c(roc_auc, sens, spec), names_to = "metric", values_to = "value")
+
+# Train (left) and Test (right), same colour per metric, dashed line at selected lambda.
+# NB: the test panel is ILLUSTRATIVE - lambda and the cutoff were chosen on train.
+ggplot(enet_metric_df, aes(lambda, value, colour = metric)) +
+  geom_line(linewidth = 0.8) +
+  scale_x_log10() +
+  geom_vline(xintercept = enet_favorite$penalty, linetype = "dashed") +
+  facet_wrap(~ set) +
+  labs(x = "Penalty (lambda, log scale)", y = "Metric value", colour = "Metric",
+       title = "Metric stability vs shrinkage (mixture = 0): Training vs Testing",
+       subtitle = "sens/spec at the per-lambda Youden-J cutoff (chosen on train)") +
+  theme_minimal()
+
+# 3D Surface: penalty x mixture x CV roc_auc (rotatable in the Viewer) ----
+enet_surface <- collect_metrics(enet_tune) |>
+  dplyr::filter(.metric == "roc_auc") |>
+  dplyr::select(penalty, mixture, mean)
+
+z_mat <- enet_surface |>
+  tidyr::pivot_wider(names_from = mixture, values_from = mean) |>
+  tibble::column_to_rownames("penalty") |>
+  as.matrix()
+penalties <- as.numeric(rownames(z_mat))
+mixtures  <- as.numeric(colnames(z_mat))
+
+enet_best <- select_best(enet_tune, metric = "roc_auc")
+sel_pts <- dplyr::bind_rows(
+  dplyr::mutate(enet_favorite, rule = "select_by_one_std_err"),
+  dplyr::mutate(enet_best,     rule = "select_best")
+) |>
+  dplyr::left_join(enet_surface, by = c("penalty", "mixture"))
+
+plot_ly() |>
+  add_surface(x = ~mixtures, y = ~log10(penalties), z = ~z_mat,
+              colorscale = "Viridis", opacity = 0.85,
+              colorbar = list(title = "CV roc_auc")) |>
+  add_markers(data = sel_pts,
+              x = ~mixture, y = ~log10(penalty), z = ~mean,
+              color = ~rule, size = I(140),
+              text = ~paste0(rule,
+                             "<br>penalty = ", signif(penalty, 3),
+                             "<br>mixture = ", mixture,
+                             "<br>CV roc_auc = ", round(mean, 4)),
+              hoverinfo = "text") |>
+  layout(title = "CV roc_auc over (penalty, mixture)",
+         scene = list(
+           xaxis = list(title = "mixture"),
+           yaxis = list(title = "log10(penalty)"),
+           zaxis = list(title = "CV roc_auc")))
 
