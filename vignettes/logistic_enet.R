@@ -168,3 +168,93 @@ relapse_pred_enet_test <-
 relapse_pred_enet_test |>
   roc_curve(truth = outcome, .pred_1, event_level = "second") |>
   autoplot()
+
+
+# ── Pure LASSO ───────────────────────────────────────────────────────────────
+# Same as the Elastic Net section above, but mixture is fixed to 1 (pure LASSO),
+# so the grid tunes penalty only. Everything else is identical with lasso_ names.
+
+# Workflow ----------------
+lasso_recipe <- lr_recipe
+
+lasso_spec <-
+  logistic_reg(penalty = tune(), mixture = 1) |>   # mixture = 1 -> pure LASSO
+  set_engine("glmnet") |>
+  set_mode("classification")
+
+lasso_workflow <-
+  workflow() |>
+  add_recipe(lasso_recipe) |>
+  add_model(lasso_spec)
+
+# Hyperparameter Tuning-----
+lasso_grid <- grid_regular(penalty(), levels = 50)
+
+set.seed(12345)
+lasso_folds <- vfold_cv(train_data, v = 10, strata = outcome)
+
+lasso_cl <- makePSOCKcluster(parallel::detectCores() - 1)
+registerDoParallel(lasso_cl)
+lasso_tune <- tune_grid(
+  lasso_workflow,
+  resamples = lasso_folds,
+  grid      = lasso_grid
+)
+stopCluster(lasso_cl)
+
+# Model Fit --------
+lasso_favorite <- select_by_one_std_err(lasso_tune, desc(penalty), metric = "roc_auc")
+
+lasso_final_wf <- finalize_workflow(lasso_workflow, lasso_favorite)
+
+lasso_fit <- lasso_final_wf |> fit(data = train_data)
+
+# Review Fit on Training Data-----
+relapse_pred_lasso <-
+  predict(lasso_fit, train_data, type = "prob") |>
+  bind_cols(train_data |> select(outcome))
+
+relapse_pred_lasso_class <-
+  predict(lasso_fit, train_data, type = "class") |>
+  bind_cols(train_data |> select(outcome))
+
+relapse_pred_lasso |>
+  roc_curve(truth = outcome, .pred_1, event_level = "second") |>
+  autoplot()
+
+relapse_pred_lasso |>
+  roc_auc(truth = outcome, .pred_1, event_level = "second")
+
+relapse_pred_lasso_class |>
+  sens(truth = outcome, estimate = .pred_class, event_level = "second")
+
+relapse_pred_lasso_class |>
+  spec(truth = outcome, estimate = .pred_class, event_level = "second")
+
+# Look at Model Metrics -----
+lasso_last_fit <- lasso_final_wf |> last_fit(data_split)
+
+collect_metrics(lasso_last_fit)
+
+lasso_last_fit |>
+  collect_predictions() |>
+  specificity(truth = outcome, estimate = .pred_class, event_level = "second")
+
+# Look at Variable Importance ------
+lasso_fit |>
+  extract_fit_parsnip() |>
+  vip(num_features = 20)
+
+lasso_fit |>
+  extract_fit_parsnip() |>
+  tidy()
+
+# Review Fit on the Test Data ------
+relapse_pred_lasso_test <-
+  predict(lasso_fit, test_data, type = "prob") |>
+  bind_cols(test_data |> select(outcome))
+
+relapse_pred_lasso_test |>
+  roc_curve(truth = outcome, .pred_1, event_level = "second") |>
+  autoplot()
+
