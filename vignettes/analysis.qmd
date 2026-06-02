@@ -59,10 +59,23 @@ source("logistic_regression.R")
 
 ```{r logistic-regression-wopv}
 #| include: false
+#| cache-extra: !expr digest::digest(readLines("logistic_regression_without_problem_vars.R"))
 # Sources the cleaned model (problem variables excluded). The guard inside the
 # script skips rebuilding analysis_tibble since logistic_regression.R already
 # created it. All _wopv objects land in this document's R environment.
 source("logistic_regression_without_problem_vars.R")
+```
+
+```{r logistic-regression-wopv-kfold}
+#| include: false
+#| cache-extra: !expr digest::digest(readLines("logistic_regression_wopv_kfold.R"))
+source("logistic_regression_wopv_kfold.R")
+```
+
+```{r knn}
+#| include: false
+#| cache-extra: !expr digest::digest(readLines("knn.R"))
+source("knn.R")
 ```
 
 # Abstract

@@ -160,6 +160,9 @@ _site/
 # Vignettes
 inst/doc/
 inst/docs/
+
+# Scratch / study guides
+inst/scratch/
 .positai
 analysis_files
 
