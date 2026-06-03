@@ -186,7 +186,7 @@ Standard binary logistic regression models the log-odds of relapse as a linear c
 
 ### LASSO and Elastic Net
 
-Penalized logistic regression was fitted with the `glmnet` engine. Two specifications are reported. The elastic-net model tunes both the penalty ($\lambda$) and the mixture (the L1/L2 blend) over a regular 50 × 5 grid via 5-fold cross-validation; the cross-validated search selected `mixture = 0` (pure ridge). The pure-LASSO model fixes `mixture = 1` and tunes the penalty alone over 50 log-spaced values. Both optimize ROC AUC, and the final penalty is chosen by the one-standard-error rule (`select_by_one_std_err`), which takes the most heavily penalized model whose CV ROC AUC is within one standard error of the best — favoring sparsity. The L1 penalty is the natural tool for the separation-prone predictors above: it shrinks unstable coefficients toward (elastic net) or exactly to zero (LASSO at the selected penalty).
+Penalized logistic regression was fitted with the `glmnet` engine. Two specifications are reported. The elastic-net model tunes both the penalty ($\lambda$) and the mixture (the L1/L2 blend) over a regular 50 × 5 grid via 5-fold cross-validation; the 5-fold cross-validated search selected `mixture = 0.25` (25% L1 / 75% L2 blend — predominantly ridge with a small LASSO component). The pure-LASSO model fixes `mixture = 1` and tunes the penalty alone over 50 log-spaced values. Both optimize ROC AUC, and the final penalty is chosen by the one-standard-error rule (`select_by_one_std_err`), which takes the most heavily penalized model whose CV ROC AUC is within one standard error of the best — favoring sparsity. The L1 penalty is the natural tool for the separation-prone predictors above: it shrinks unstable coefficients toward (elastic net) or exactly to zero (LASSO at the selected penalty).
 
 ### K-Nearest Neighbors
 
@@ -361,7 +361,7 @@ Exclusion proceeded over three iterative rounds. In each round, all predictors w
 Following three rounds of exclusion totaling 15 predictors (beyond `treatment_arm`, which is excluded from both models), all `r nrow(wopv_ci_check)` estimable predictors had well-bounded Wald confidence intervals. The three widest spanned `r round(wopv_top3_ci$log10_width[1], 1)`, `r round(wopv_top3_ci$log10_width[2], 1)`, and `r round(wopv_top3_ci$log10_width[3], 1)` orders of magnitude (`r wopv_top3_ci$term[1]`, `r wopv_top3_ci$term[2]`, and `r wopv_top3_ci$term[3]`, respectively); all remaining intervals were narrower. Seven additional terms had missing coefficient estimates due to exact multicollinearity in the encoded design matrix (rank deficiency); these reflect structural properties of the one-hot and polynomial encodings and are not separation.
 
 ```{r tbl-lr-wopv-metrics}
-#| tbl-cap: "Model performance after exclusion of structurally sparse predictors. Training and test sets from the same stratified 75/25 split (seed 12345) as the baseline logistic regression, enabling direct comparison."
+#| tbl-cap: "Logistic regression (glm, no regularization) performance after exclusion of structurally sparse predictors (SSPs). Training and test sets from a stratified 75/25 split (seed 12345). No cross-validation — the model has no tuning parameters; 5-fold CV performance is shown separately in the all-methods comparison table."
 
 bind_cols(
   lr_metrics_wopv      |> rename(Train = .estimate),

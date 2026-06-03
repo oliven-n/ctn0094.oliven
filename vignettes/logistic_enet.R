@@ -412,6 +412,9 @@ sel_pts <- dplyr::bind_rows(
 ) |>
   dplyr::left_join(enet_surface, by = c("penalty", "mixture"))
 
+# Note: the LASSO path (mixture = 1) lies on the right-hand boundary plane of
+# the surface. Plotly renders it at the edge but it is correctly included in
+# the z_mat grid column for mixture = 1. # added 6/2
 plot_ly() |>
   add_surface(x = ~mixtures, y = ~log10(penalties), z = ~z_mat,
               colorscale = "Viridis", opacity = 0.85,
