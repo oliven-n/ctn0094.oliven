@@ -83,6 +83,18 @@ source("logistic_regression_wopv_kfold.R")
 source("knn.R")
 ```
 
+```{r knn-save-metrics}
+#| include: false
+# knn_wopv.R overwrites relapse_pred_knn, kknn_tune, favorite — capture KNN
+# (non-wopv) train AUC and CV AUC before that happens. # added 6/2
+knn_train_auc <- yardstick::roc_auc(
+  relapse_pred_knn, truth = outcome, .pred_1, event_level = "second"
+)$.estimate
+knn_cv_auc <- tune::collect_metrics(kknn_tune) |>
+  dplyr::filter(.metric == "roc_auc", neighbors == favorite$neighbors) |>
+  dplyr::pull(mean)
+```
+
 ```{r knn-wopv}
 #| include: false
 #| cache: true
@@ -123,14 +135,15 @@ cap_fig_withdrawal <- paste0(
   " Participants with no pre-induction assessment are excluded (n = ",
   sum(is.na(analysis_tibble$withdrawal_pre_score)), " excluded)."
 )
-cap_all_metrics <- paste0(
-  "Test-set performance of all fitted models for predicting relapse among the ",
-  scales::comma(nrow(analysis_tibble)),
-  " care-seeking adults with opioid use disorder in CTN-0027/0030/0051 (2006-2016).",
-  " ROC AUC is threshold-free; sensitivity and specificity are reported at the",
-  " Youden-J operating point chosen on the training set.",
-  " The logistic CV row reports 5-fold cross-validated means."
-)
+# cap_all_metrics retired — tbl-all-metrics now uses a static inline caption
+# KNN wopv train + CV AUC (captured here since kknn_tune/favorite now = wopv versions)
+knn_wopv_train_auc <- yardstick::roc_auc(
+  relapse_pred_knn, truth = outcome, .pred_1, event_level = "second"
+)$.estimate
+knn_wopv_cv_auc <- tune::collect_metrics(kknn_tune) |>
+  dplyr::filter(.metric == "roc_auc", neighbors == favorite$neighbors) |>
+  dplyr::pull(mean)
+
 cap_vip_glm    <- "Logistic-regression (glm engine) variable importance for predicting relapse among CTN-0027/0030/0051 participants (2006-2016), ranked by absolute z-statistic; problem variables excluded."
 cap_vip_glmnet <- paste0(
   "LASSO (glmnet engine) variable importance: the ", nrow(lasso_coef),
@@ -377,42 +390,53 @@ bind_cols(
 ## Model Performance Across Methods
 
 ```{r tbl-all-metrics}
-#| tbl-cap: !expr cap_all_metrics
+#| tbl-cap: "ROC AUC for all fitted models across three evaluation contexts: 5-fold cross-validation on the training set (used for hyperparameter selection; logistic CV uses fit_resamples for performance estimation), full in-sample training set AUC, and held-out 25% test set AUC. Care-seeking adults with opioid use disorder in CTN-0027/0030/0051 (2006-2016), N = 2,492."
 
-# Normalize the two plain-logistic scripts (which expose .metric/.estimate only)
-# into the shared method/.metric/.estimate shape. # added 6/2
-norm_lr <- function(tbl, label) {
-  tbl |>
-    dplyr::mutate(
-      method  = label,
-      .metric = dplyr::recode(.metric,
-                              sensitivity = "sens", specificity = "spec")
-    ) |>
-    dplyr::select(method, .metric, .estimate)
-}
+# Helper to extract ROC AUC from a .metric/.estimate tibble
+get_auc <- function(tbl) round(tbl$.estimate[tbl$.metric == "roc_auc"], 3)
 
-all_metrics <- dplyr::bind_rows(
-  norm_lr(lr_test_metrics,      "Logistic (all predictors)"),
-  norm_lr(lr_test_metrics_wopv, "Logistic (no problem vars)"),
-  lr_cv_test_metrics,
-  enet_test_metrics,
-  lasso_test_metrics,
-  knn_test_metrics,
-  knn_wopv_test_metrics
-)
+# CV AUC at selected hyperparameter (from tune objects)
+enet_cv_auc  <- tune::collect_metrics(enet_tune) |>
+  dplyr::filter(.metric == "roc_auc", penalty == enet_favorite$penalty,
+                mixture == enet_favorite$mixture) |> dplyr::pull(mean)
+lasso_cv_auc <- tune::collect_metrics(lasso_tune) |>
+  dplyr::filter(.metric == "roc_auc", penalty == lasso_favorite$penalty) |>
+  dplyr::pull(mean)
+lr_cv_auc <- lr_cv_test_metrics$.estimate[lr_cv_test_metrics$.metric == "roc_auc"]
 
-all_metrics |>
-  tidyr::pivot_wider(names_from = .metric, values_from = .estimate) |>
-  dplyr::select(method, roc_auc, accuracy, sens, spec) |>
-  dplyr::arrange(dplyr::desc(roc_auc)) |>
+# Full training AUC (in-sample, on all training data after final fit)
+enet_train_auc  <- yardstick::roc_auc(relapse_pred_enet,  truth = outcome, .pred_1, event_level = "second")$.estimate
+lasso_train_auc <- yardstick::roc_auc(relapse_pred_lasso, truth = outcome, .pred_1, event_level = "second")$.estimate
+lr_train_auc      <- get_auc(lr_metrics)
+lr_wopv_train_auc <- get_auc(lr_metrics_wopv)
+
+# Test AUC
+lr_test_auc      <- get_auc(lr_test_metrics)
+lr_wopv_test_auc <- get_auc(lr_test_metrics_wopv)
+enet_test_auc    <- round(tune::collect_metrics(enet_last_fit)$.estimate[tune::collect_metrics(enet_last_fit)$.metric == "roc_auc"], 3)
+lasso_test_auc   <- round(tune::collect_metrics(lasso_last_fit)$.estimate[tune::collect_metrics(lasso_last_fit)$.metric == "roc_auc"], 3)
+knn_test_auc     <- knn_test_metrics$.estimate[knn_test_metrics$.metric == "roc_auc"]
+knn_wopv_test_auc <- knn_wopv_test_metrics$.estimate[knn_wopv_test_metrics$.metric == "roc_auc"]
+
+tibble::tribble(
+  ~Method,                         ~CV,                        ~Train,           ~Test,
+  "Logistic (all predictors)",     NA_real_,                   lr_train_auc,      lr_test_auc,
+  "Logistic (no problem vars)",    NA_real_,                   lr_wopv_train_auc, lr_wopv_test_auc,
+  "Logistic (5-fold CV)",          round(lr_cv_auc, 3),        NA_real_,          NA_real_,
+  "Elastic net (mixture = 0.25)",  round(enet_cv_auc, 3),      round(enet_train_auc, 3),  enet_test_auc,
+  "LASSO",                         round(lasso_cv_auc, 3),     round(lasso_train_auc, 3), lasso_test_auc,
+  "KNN",                           round(knn_cv_auc, 3),       round(knn_train_auc, 3),   knn_test_auc,
+  "KNN (no problem vars)",         round(knn_wopv_cv_auc, 3),  round(knn_wopv_train_auc, 3), knn_wopv_test_auc
+) |>
   kable(
     digits    = 3,
-    col.names = c("Method", "ROC AUC", "Accuracy", "Sensitivity", "Specificity"),
-    align     = "lrrrr"
+    col.names = c("Method", "CV AUC", "Full Train AUC", "Test AUC"),
+    align     = "lrrr",
+    na        = "—"
   )
 ```
 
-The full-predictor and no-problem-variable logistic models perform near-identically on test ROC AUC (`r round(all_metrics$.estimate[all_metrics$method=="Logistic (all predictors)" & all_metrics$.metric=="roc_auc"], 3)` vs `r round(all_metrics$.estimate[all_metrics$method=="Logistic (no problem vars)" & all_metrics$.metric=="roc_auc"], 3)`), so excluding the separation-prone predictors costs essentially no discrimination while removing numerically meaningless coefficients. We therefore consider the no-problem-variable logistic model the most trustworthy linear specification for handling separation. KNN and LASSO, by contrast, are run on the full predictor set: their built-in mechanisms (distance-based prediction and L1 penalization, respectively) absorb the sparse, separating variables without the coefficient blow-up that destabilizes unpenalized logistic regression.
+The full-predictor and no-problem-variable logistic models perform near-identically on test ROC AUC (`r lr_test_auc` vs `r lr_wopv_test_auc`), so excluding the separation-prone predictors costs essentially no discrimination while removing numerically meaningless coefficients. We therefore consider the no-problem-variable logistic model the most trustworthy linear specification for handling separation. KNN and LASSO, by contrast, are run on the full predictor set: their built-in mechanisms (distance-based prediction and L1 penalization, respectively) absorb the sparse, separating variables without the coefficient blow-up that destabilizes unpenalized logistic regression.
 
 ## Variable Importance by Engine
 
