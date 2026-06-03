@@ -2,6 +2,9 @@
 title: "Predicting treatment response for people undergoing care for OUD"
 author: "Nat Oliven"
 date: last-modified
+format:
+  html:
+    embed-resources: true
 output: rmarkdown::html_vignette
 vignette: >
   %\VignetteIndexEntry{Predicting treatment response for people undergoing care for OUD}
@@ -68,24 +71,28 @@ source("logistic_regression_without_problem_vars.R")
 
 ```{r logistic-regression-wopv-kfold}
 #| include: false
+#| cache: true
 #| cache-extra: !expr digest::digest(readLines("logistic_regression_wopv_kfold.R"))
 source("logistic_regression_wopv_kfold.R")
 ```
 
 ```{r knn}
 #| include: false
+#| cache: true
 #| cache-extra: !expr digest::digest(readLines("knn.R"))
 source("knn.R")
 ```
 
 ```{r knn-wopv}
 #| include: false
+#| cache: true
 #| cache-extra: !expr digest::digest(readLines("knn_wopv.R"))
 source("knn_wopv.R")
 ```
 
 ```{r logistic-enet}
 #| include: false
+#| cache: true
 #| cache-extra: !expr digest::digest(readLines("logistic_enet.R"))
 source("logistic_enet.R")
 ```
