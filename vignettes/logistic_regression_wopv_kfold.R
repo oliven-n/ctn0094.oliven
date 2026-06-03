@@ -9,6 +9,10 @@ registerDoParallel(cl)
 if (!exists("lr_workflow_wopv")) {
   source(here::here("vignettes/logistic_regression_without_problem_vars.R"))
 }
+# youden_cutoff() and sens_spec_at() live in metrics_helpers.R
+if (!exists("youden_cutoff")) {
+  source(here::here("vignettes/metrics_helpers.R"))
+}
 
 # knows what train, outcome, etc are from the prev .R doc
 set.seed(12345)
