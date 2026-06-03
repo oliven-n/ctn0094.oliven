@@ -110,6 +110,8 @@ knn_auc_metric <- function(truth, estimate) {
   yardstick::roc_auc_vec(truth = truth, estimate = estimate, event_level = "second")
 }
 
+cl <- makePSOCKcluster(parallel::detectCores() - 1)
+registerDoParallel(cl)
 set.seed(12345)
 knn_vip_obj <- vip::vi_permute(
   object        = knn_fit,                                  # the fitted workflow
@@ -126,6 +128,7 @@ knn_vip_obj <- vip::vi_permute(
   },
   nsim = 10
 )
+stopCluster(cl)
 
 # VIP plot (top 15), enriched with title/axis/description. # added 6/2
 vip::vip(knn_vip_obj, num_features = 15, geom = "col") +

@@ -109,6 +109,8 @@ knn_auc_metric <- function(truth, estimate) {
   yardstick::roc_auc_vec(truth = truth, estimate = estimate, event_level = "second")
 }
 
+cl <- makePSOCKcluster(parallel::detectCores() - 1)
+registerDoParallel(cl)
 set.seed(12345)
 knn_wopv_vip_obj <- vip::vi_permute(
   object        = knn_fit,
@@ -125,6 +127,7 @@ knn_wopv_vip_obj <- vip::vi_permute(
   },
   nsim = 10
 )
+stopCluster(cl)
 
 vip::vip(knn_wopv_vip_obj, num_features = 15, geom = "col") +
   ggplot2::labs(
