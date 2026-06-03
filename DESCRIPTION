@@ -22,12 +22,14 @@ Suggests:
     rmarkdown,
     roxygen2,
     rUM,
+    scales,
     table1,
     tibble,
     tidymodels,
     tidyverse,
     doParallel,
     digest, 
-    kknn, 
-    vip
+    kknn,
+    vip,
+    xfun
 VignetteBuilder: quarto
