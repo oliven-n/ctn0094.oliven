@@ -90,6 +90,49 @@ source("knn_wopv.R")
 source("logistic_enet.R")
 ```
 
+```{r precompute-captions}
+#| include: false
+# Pre-compute captions that contain inline R calculations (commas inside
+# paste0 break !expr YAML parsing when placed directly in chunk options). # added 6/2
+cap_tbl_demographics <- paste0(
+  "Baseline characteristics of the ",
+  scales::comma(nrow(analysis_tibble)),
+  " care-seeking adults with opioid use disorder in CTN-0027, CTN-0030",
+  " and CTN-0051 (2006-2016), by study."
+)
+cap_tbl_drug <- paste0(
+  "Substance-use categories observed in the 28 days before randomization",
+  " (days -28 to -1) among the ",
+  scales::comma(nrow(analysis_base)),
+  " CTN-0027/0030/0051 participants (2006-2016).",
+  " N users and percentage are relative to the analysis sample."
+)
+cap_fig_withdrawal <- paste0(
+  "Pre-induction withdrawal severity among care-seeking adults with opioid",
+  " use disorder in CTN-0027, CTN-0030 and CTN-0051 (2006-2016).",
+  " Scores derive from COWS (CTN-0027/0030) or SOWS (CTN-0051) before",
+  " each participant's first MOUD dose.",
+  " 0 = None, 1 = Mild, 2 = Moderate, 3 = Severe.",
+  " Participants with no pre-induction assessment are excluded (n = ",
+  sum(is.na(analysis_tibble$withdrawal_pre_score)), " excluded)."
+)
+cap_all_metrics <- paste0(
+  "Test-set performance of all fitted models for predicting relapse among the ",
+  scales::comma(nrow(analysis_tibble)),
+  " care-seeking adults with opioid use disorder in CTN-0027/0030/0051 (2006-2016).",
+  " ROC AUC is threshold-free; sensitivity and specificity are reported at the",
+  " Youden-J operating point chosen on the training set.",
+  " The logistic CV row reports 10-fold cross-validated means."
+)
+cap_vip_glm    <- "Logistic-regression (glm engine) variable importance for predicting relapse among CTN-0027/0030/0051 participants (2006-2016), ranked by absolute z-statistic; problem variables excluded."
+cap_vip_glmnet <- paste0(
+  "LASSO (glmnet engine) variable importance: the ", nrow(lasso_coef),
+  " predictors with non-zero coefficients at the selected penalty",
+  " for relapse prediction among CTN-0027/0030/0051 participants (2006-2016)."
+)
+cap_vip_knn    <- "K-nearest-neighbors (kknn engine) permutation variable importance for relapse prediction among CTN-0027/0030/0051 participants (2006-2016): mean decrease in test ROC AUC when each predictor is shuffled (10 permutations)."
+```
+
 # Abstract
 
 This study uses data from three NIDA Clinical Trials Network studies (CTN-0027, CTN-0030, CTN-0051) to build a predictive model of treatment response in people with opioid use disorder (OUD). We construct a pre-treatment feature matrix from behavioral, substance use, demographic, and clinical data in the 28 days before randomization, and evaluate whether these features predict relapse during the treatment period.
@@ -167,7 +210,7 @@ After restricting to first randomizations, the analysis sample comprised `r nrow
 ## Participant Characteristics
 
 ```{r tbl-demographics}
-#| tbl-cap: !expr paste0("Baseline characteristics of the ", scales::comma(nrow(analysis_tibble)), " care-seeking adults with opioid use disorder in CTN-0027, CTN-0030 and CTN-0051 (2006-2016), by study.")
+#| tbl-cap: !expr cap_tbl_demographics
 
 analysis_tibble |>
   select(project, age, is_male, race, is_hispanic,
@@ -197,7 +240,7 @@ analysis_tibble |>
 ## Drug Use in the Pre-Treatment Window
 
 ```{r tbl-drug-prevalence}
-#| tbl-cap: !expr paste0("Substance-use categories observed in the 28 days before randomization (days -28 to -1) among the ", scales::comma(nrow(analysis_base)), " CTN-0027/0030/0051 participants (2006-2016). N users and percentage are relative to the analysis sample.")
+#| tbl-cap: !expr cap_tbl_drug
 
 n_analysis <- nrow(analysis_base)
 
@@ -220,7 +263,7 @@ all_drugs_filtered |>
 ## Predictor Distributions
 
 ```{r fig-withdrawal-severity}
-#| fig-cap: !expr paste0("Pre-induction withdrawal severity among care-seeking adults with opioid use disorder in CTN-0027, CTN-0030 and CTN-0051 (2006-2016). Scores derive from COWS (CTN-0027/0030) or SOWS (CTN-0051) before each participant's first MOUD dose. 0 = None, 1 = Mild, 2 = Moderate, 3 = Severe. Participants with no pre-induction assessment are excluded (n = ", sum(is.na(analysis_tibble$withdrawal_pre_score)), " excluded).")
+#| fig-cap: !expr cap_fig_withdrawal
 #| fig-width: 6.5
 #| fig-height: 4.0
 
@@ -327,7 +370,7 @@ bind_cols(
 ## Model Performance Across Methods
 
 ```{r tbl-all-metrics}
-#| tbl-cap: !expr paste0("Test-set performance of all fitted models for predicting relapse among the ", scales::comma(nrow(analysis_tibble)), " care-seeking adults with opioid use disorder in CTN-0027/0030/0051 (2006-2016). ROC AUC is threshold-free; sensitivity and specificity are reported at the Youden-J operating point chosen on the training set. The logistic CV row reports 10-fold cross-validated means.")
+#| tbl-cap: !expr cap_all_metrics
 
 # Normalize the two plain-logistic scripts (which expose .metric/.estimate only)
 # into the shared method/.metric/.estimate shape. # added 6/2
@@ -367,7 +410,7 @@ The full-predictor and no-problem-variable logistic models perform near-identica
 ## Variable Importance by Engine
 
 ```{r fig-vip-glm}
-#| fig-cap: "Logistic-regression (glm engine) variable importance for predicting relapse among CTN-0027/0030/0051 participants (2006-2016), ranked by absolute z-statistic; problem variables excluded."
+#| fig-cap: !expr cap_vip_glm
 #| fig-width: 6.5
 #| fig-height: 4.5
 vip::vip(lr_wopv_vip_obj, num_features = 15, geom = "col") +
@@ -376,7 +419,7 @@ vip::vip(lr_wopv_vip_obj, num_features = 15, geom = "col") +
 ```
 
 ```{r fig-vip-glmnet}
-#| fig-cap: !expr paste0("LASSO (glmnet engine) variable importance: the ", nrow(lasso_coef), " predictors with non-zero coefficients at the selected penalty, for relapse prediction among CTN-0027/0030/0051 participants (2006-2016).")
+#| fig-cap: !expr cap_vip_glmnet
 #| fig-width: 6.5
 #| fig-height: 4.5
 ggplot2::ggplot(lasso_coef,
@@ -387,7 +430,7 @@ ggplot2::ggplot(lasso_coef,
 ```
 
 ```{r fig-vip-knn}
-#| fig-cap: "K-nearest-neighbors (kknn engine) permutation variable importance for relapse prediction among CTN-0027/0030/0051 participants (2006-2016): mean decrease in test ROC AUC when each predictor is shuffled (10 permutations)."
+#| fig-cap: !expr cap_vip_knn
 #| fig-width: 6.5
 #| fig-height: 4.5
 vip::vip(knn_vip_obj, num_features = 15, geom = "col") +
