@@ -295,6 +295,7 @@ relapse_pred_lasso_test |>
 library(glmnet)
 library(broom)
 library(plotly)
+conflicts_prefer(plotly::layout)
 
 # Bake the recipe once -> numeric predictor matrix + outcome vector for glmnet.
 # (who has role "ID" and outcome is dropped by all_predictors(), so X is clean.)
