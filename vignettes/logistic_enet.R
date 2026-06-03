@@ -4,6 +4,7 @@ library(doParallel)
 if (!exists("train_data")) {
   source(here::here("vignettes/logistic_regression.R"))
 }
+source(here::here("vignettes/metrics_helpers.R"))
 
 # ── Helpers (shared by both sections) ────────────────────────────────────────
 # 0.5 is a useless classification cutoff here: the ~74% relapse base rate pushes
@@ -12,25 +13,8 @@ if (!exists("train_data")) {
 # (the threshold maximizing sens + spec - 1) on the TRAINING ROC curve, then apply
 # that SAME cutoff to both train and test (choose on train, report on test).
 
-# Youden-J optimal probability cutoff from a tibble with (.pred_1, outcome).
-youden_cutoff <- function(preds) {
-  preds |>
-    roc_curve(truth = outcome, .pred_1, event_level = "second") |>
-    dplyr::mutate(youden_j = sensitivity + specificity - 1) |>
-    dplyr::slice_max(youden_j, n = 1, with_ties = FALSE) |>
-    dplyr::pull(.threshold)
-}
-
-# sens + spec at an arbitrary probability cutoff (relapse = "1" = second level).
-sens_spec_at <- function(preds, cutoff) {
-  labeled <- preds |>
-    dplyr::mutate(.pred_cut = factor(dplyr::if_else(.pred_1 >= cutoff, "1", "0"),
-                                     levels = c("0", "1")))
-  dplyr::bind_rows(
-    sens(labeled, truth = outcome, estimate = .pred_cut, event_level = "second"),
-    spec(labeled, truth = outcome, estimate = .pred_cut, event_level = "second")
-  )
-}
+# youden_cutoff() and sens_spec_at() now live in metrics_helpers.R (sourced
+# above) so this file and the knn scripts share one definition. # enriched 6/2
 
 # ── Elastic Net Penalty → Pure Ridge ─────────────────────────────────────────
 # Everything in THIS section fits an ELASTIC NET logistic regression: both the
@@ -154,6 +138,11 @@ collect_metrics(enet_last_fit)
 # test — never tuned on test). spec is the clinically important one here.
 sens_spec_at(collect_predictions(enet_last_fit), enet_cut)
 
+# Named metric tibble for the cross-method comparison table in analysis.qmd. # added 6/2
+enet_test_metrics <- test_metrics_from_lastfit(
+  enet_last_fit, enet_cut, "Elastic net (ridge)"
+)
+
 # Look at Variable Importance ------
 # Here's where LASSO beats knn: the model IS its coefficients, so importance is
 # meaningful. vip() shows the largest |coefficients| at the selected penalty —
@@ -243,6 +232,11 @@ collect_metrics(lasso_last_fit)
 
 # Test sens + spec at the SAME train-chosen cutoff (choose on train, report on test)
 sens_spec_at(collect_predictions(lasso_last_fit), lasso_cut)
+
+# Named metric tibble for the cross-method comparison table in analysis.qmd. # added 6/2
+lasso_test_metrics <- test_metrics_from_lastfit(
+  lasso_last_fit, lasso_cut, "LASSO"
+)
 
 # Look at Variable Importance ------
 # vip() does not pin to the workflow's selected penalty — it reads a different
