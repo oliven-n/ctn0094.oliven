@@ -22,10 +22,17 @@ Suggests:
     rmarkdown,
     roxygen2,
     rUM,
+    scales,
     table1,
     tibble,
     tidymodels,
     tidyverse,
     doParallel,
-    digest
+    digest, 
+    kknn,
+    vip,
+    xfun
 VignetteBuilder: quarto
+Depends: 
+    R (>= 3.5)
+LazyData: true

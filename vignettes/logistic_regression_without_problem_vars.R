@@ -299,3 +299,19 @@ lr_test_metrics_wopv |>
     caption   = "Test-set performance — no problem variables."
   )
 
+
+# ── Variable Importance (glm engine) ─────────────────────────────────────────
+# vip() on a glm ranks predictors by |z-statistic| (coef / std.error). # added 6/2
+library(vip)
+
+lr_wopv_vip_obj <- lr_fit_wopv |> extract_fit_parsnip()
+
+vip::vip(lr_wopv_vip_obj, num_features = 15, geom = "col") +
+  ggplot2::labs(
+    title    = "Logistic regression variable importance (glm engine)",
+    subtitle = "Predictors ranked by absolute z-statistic; problem variables excluded",
+    x        = "Importance (|z-statistic|)",
+    y        = NULL
+  ) +
+  ggplot2::theme_minimal(base_size = 11)
+

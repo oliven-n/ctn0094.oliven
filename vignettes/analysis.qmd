@@ -2,6 +2,9 @@
 title: "Predicting treatment response for people undergoing care for OUD"
 author: "Nat Oliven"
 date: last-modified
+format:
+  html:
+    embed-resources: true
 output: rmarkdown::html_vignette
 vignette: >
   %\VignetteIndexEntry{Predicting treatment response for people undergoing care for OUD}
@@ -23,8 +26,6 @@ knitr:
 editor: source
 bibliography: [references.bib, packages.bib]
 csl: apa.csl
-execute:
-  cache: true
 ---
 
 ```{r load-packages}
@@ -42,7 +43,6 @@ options(dplyr.summarise.inform = FALSE)
 
 ```{r build-analysis}
 #| include: false
-#| cache-extra: !expr digest::digest(readLines("building_analysis.R"))
 # source() runs the entire script in place — every object it creates (analysis_tibble,
 # analysis_base, all_drugs_filtered, etc.) lands in this document's R environment.
 # It's not like Python's `from module import x` (selective). It's closer to
@@ -55,7 +55,6 @@ source("building_analysis.R")
 
 ```{r logistic-regression}
 #| include: false
-#| cache-extra: !expr digest::digest(readLines("logistic_regression.R"))
 # Same pattern as build-analysis: runs logistic_regression.R in place, making
 # all fitted model objects available to the Results section below.
 source("logistic_regression.R")
@@ -72,8 +71,73 @@ source("logistic_regression_without_problem_vars.R")
 
 ```{r logistic-regression-wopv-kfold}
 #| include: false
+#| cache: true
 #| cache-extra: !expr digest::digest(readLines("logistic_regression_wopv_kfold.R"))
 source("logistic_regression_wopv_kfold.R")
+```
+
+```{r knn}
+#| include: false
+#| cache: true
+#| cache-extra: !expr digest::digest(readLines("knn.R"))
+source("knn.R")
+```
+
+```{r knn-wopv}
+#| include: false
+#| cache: true
+#| cache-extra: !expr digest::digest(readLines("knn_wopv.R"))
+source("knn_wopv.R")
+```
+
+```{r logistic-enet}
+#| include: false
+#| cache: true
+#| cache-extra: !expr digest::digest(readLines("logistic_enet.R"))
+source("logistic_enet.R")
+```
+
+```{r precompute-captions}
+#| include: false
+# Pre-compute captions that contain inline R calculations (commas inside
+# paste0 break !expr YAML parsing when placed directly in chunk options). # added 6/2
+cap_tbl_demographics <- paste0(
+  "Baseline characteristics of the ",
+  scales::comma(nrow(analysis_tibble)),
+  " care-seeking adults with opioid use disorder in CTN-0027, CTN-0030",
+  " and CTN-0051 (2006-2016), by study."
+)
+cap_tbl_drug <- paste0(
+  "Substance-use categories observed in the 28 days before randomization",
+  " (days -28 to -1) among the ",
+  scales::comma(nrow(analysis_base)),
+  " CTN-0027/0030/0051 participants (2006-2016).",
+  " N users and percentage are relative to the analysis sample."
+)
+cap_fig_withdrawal <- paste0(
+  "Pre-induction withdrawal severity among care-seeking adults with opioid",
+  " use disorder in CTN-0027, CTN-0030 and CTN-0051 (2006-2016).",
+  " Scores derive from COWS (CTN-0027/0030) or SOWS (CTN-0051) before",
+  " each participant's first MOUD dose.",
+  " 0 = None, 1 = Mild, 2 = Moderate, 3 = Severe.",
+  " Participants with no pre-induction assessment are excluded (n = ",
+  sum(is.na(analysis_tibble$withdrawal_pre_score)), " excluded)."
+)
+cap_all_metrics <- paste0(
+  "Test-set performance of all fitted models for predicting relapse among the ",
+  scales::comma(nrow(analysis_tibble)),
+  " care-seeking adults with opioid use disorder in CTN-0027/0030/0051 (2006-2016).",
+  " ROC AUC is threshold-free; sensitivity and specificity are reported at the",
+  " Youden-J operating point chosen on the training set.",
+  " The logistic CV row reports 5-fold cross-validated means."
+)
+cap_vip_glm    <- "Logistic-regression (glm engine) variable importance for predicting relapse among CTN-0027/0030/0051 participants (2006-2016), ranked by absolute z-statistic; problem variables excluded."
+cap_vip_glmnet <- paste0(
+  "LASSO (glmnet engine) variable importance: the ", nrow(lasso_coef),
+  " predictors with non-zero coefficients at the selected penalty",
+  " for relapse prediction among CTN-0027/0030/0051 participants (2006-2016)."
+)
+cap_vip_knn    <- "K-nearest-neighbors (kknn engine) permutation variable importance for relapse prediction among CTN-0027/0030/0051 participants (2006-2016): mean decrease in test ROC AUC when each predictor is shuffled (10 permutations)."
 ```
 
 # Abstract
@@ -84,13 +148,13 @@ This study uses data from three NIDA Clinical Trials Network studies (CTN-0027, 
 
 Opioid use disorder is associated with substantial mortality, morbidity, and economic burden in the United States. Medications for OUD (MOUD) — including methadone, buprenorphine-naloxone, and extended-release naltrexone — are effective treatments, yet individual response varies considerably. Matching patients to the treatment most likely to benefit them remains a central challenge in addiction medicine.
 
-The CTN-0094 harmonized dataset combines three randomized clinical trials comparing MOUD regimens in opioid-dependent adults. By pooling data across studies, we have sufficient sample size to examine whether pre-treatment characteristics predict treatment response. The goal of this analysis is to build and evaluate a feature matrix capturing the 28 days prior to randomization, which will serve as input to predictive models of relapse outcomes.
+The CTN-0094 harmonized dataset combines three randomized clinical trials comparing MOUD regimens in opioid-dependent adults [@ctn0027; @ctn0030; @ctn0051]. By pooling data across studies, we have sufficient sample size to examine whether pre-treatment characteristics predict treatment response. The goal of this analysis is to build and evaluate a feature matrix capturing the 28 days prior to randomization, which will serve as input to predictive models of relapse outcomes.
 
 # Methods
 
 ## Subjects
 
-Data come from three NIDA Clinical Trials Network studies harmonized in the `public.ctn0094data` R package: CTN-0027 (methadone vs. buprenorphine-naloxone), CTN-0030 (buprenorphine-naloxone only), and CTN-0051 (extended-release naltrexone vs. buprenorphine-naloxone). Eligibility criteria for all three trials required a DSM-IV diagnosis of opioid dependence, age ≥ 18 years, and provision of informed consent. Only participants' first randomization is included; the CTN-0030 re-randomization step is excluded. The analysis sample includes `r nrow(analysis_base)` participants across `r n_distinct(analysis_base$project)` studies.
+Data come from three NIDA Clinical Trials Network studies harmonized in the `public.ctn0094data` R package: CTN-0027 (methadone vs. buprenorphine-naloxone), CTN-0030 (buprenorphine-naloxone only), and CTN-0051 (extended-release naltrexone vs. buprenorphine-naloxone). Eligibility criteria for all three trials required a DSM-IV diagnosis of opioid dependence, age ≥ 18 years, and provision of informed consent. Only participants' first randomization is included; the CTN-0030 re-randomization step is excluded. The analysis sample includes `r nrow(analysis_base) |> scales::comma()` care-seeking adults with opioid use disorder, drawn from `r n_distinct(analysis_base$project) |> xfun::n2w()` harmonized NIDA Clinical Trials Network studies (CTN-0027, CTN-0030 and CTN-0051) conducted between 2006 and 2016.
 
 ## Feature Engineering
 
@@ -100,60 +164,60 @@ All longitudinal features are derived from a 28-day pre-randomization window (da
 
 All models predict a binary relapse outcome from the pre-treatment feature matrix. Candidate models span interpretable baselines through high-capacity ensemble methods. Final model selection will be based on cross-validated area under the ROC curve (AUC-ROC).
 
+All models share a single `recipes` preprocessing pipeline applied inside each `workflow`, so that resampling re-estimates every data-dependent step on the analysis fold only (no leakage). The recipe gives `who` an ID role; removes treatment-arm leakage variables (`treatment_arm` and its medication-type proxies) and zero-variance columns; handles missingness in two tiers — structural study-level missingness gets an explicit `step_indicate_na()` indicator before median/mode imputation, while sporadic item-level missingness is median/mode imputed without an indicator; scores ordered factors with `step_ordinalscore()` where equal spacing is defensible; standardizes all numeric predictors with `step_normalize()`; one-hot encodes unordered factors and uses polynomial contrasts for cigarettes-per-day; and finally drops predictors correlated above |r| = 0.90 with `step_corr()`.
+
+::: {.callout-important title="NOTE TO SELF — REMOVE BEFORE SUBMISSION"}
+
+**Metric-priority reasoning (settle before writing the Discussion):**
+
+- **Model selection prioritizes AUC-ROC** — threshold-free, and the convention adopted here. AUC is *symmetric* in sensitivity and specificity, so it encodes no operating preference, and a sens/spec priority does **not** change which model is selected.
+
+- **Specificity is the operating-point priority in this design.** With relapse coded as the positive class, specificity = correctly identifying the participants who will *not* relapse — i.e., **identifying people whose pre-treatment profile is genuinely promising for treatment**. The costly error to minimize is the false positive (flagging a true non-relapser as high-risk), so a specificity-favoring operating point is the defensible choice. *[Suggested cites — confirm fit before using: Vickers & Elkin (2006), "Decision curve analysis: a novel method for evaluating prediction models," Med Decis Making 26(6):565–574 — formalizes choosing the operating point by the FP:FN cost ratio (the direct support for cost-weighting toward specificity); Wynants et al. (2019), "Three myths about risk thresholds for prediction models," BMC Med 17:192 — thresholds should reflect error costs, not be arbitrary; Pepe (2003), The Statistical Evaluation of Medical Tests — foundational sens/spec reference. SUD domain context: Acion et al. (2017), "Use of a machine learning framework to predict substance use disorder treatment success," PLoS ONE 12(4):e0175383. CAVEAT: the SUD ML literature is split — some opioid-relapse/dropout models deliberately prioritize SENSITIVITY (don't-miss-a-relapser); be ready to justify the specificity choice against that.]*
+
+- **Implementing the specificity priority:** AUC tuning is neutral, and the current sens/spec are reported at the **Youden-J cutoff, which weights sensitivity and specificity equally** — so neither step yet encodes this preference. To prioritize specificity, apply a cost function at the operating point: either (a) **re-tune** hyperparameters on a cost-sensitive objective (heavier; the thresholded objective can destabilize selection), or (b) **more cost-effectively, a post-hoc threshold shift** on the same AUC-selected model (cheap, no re-tuning). Prefer (b).
+
+- Word-choice caveat: this is a *prognostic relapse-risk* model, not a *treatment-benefit* model (treatment arm was excluded), so keep causal "benefit of the drug" language out of the final claims.
+
+:::
+
 ### Logistic Regression
 
-Standard binary logistic regression models the log-odds of relapse as a linear combination of predictors. Used as the interpretable baseline. Estimated via maximum likelihood; no regularization. Implemented in `tidymodels` using the `glm` engine.
+Standard binary logistic regression models the log-odds of relapse as a linear combination of predictors. Used as the interpretable baseline. Estimated via maximum likelihood; no regularization. Implemented in `tidymodels` using the `glm` engine. Two variants are reported: the full-predictor baseline, and a "no problem variables" model that additionally removes predictors exhibiting complete separation (sparse drug-use indicators whose maximum-likelihood estimate does not exist). Because ordinary logistic regression has no tuning parameters, generalization is estimated by 5-fold cross-validation with `fit_resamples()`, optimizing for — and reporting — cross-validated ROC AUC.
 
-### LASSO
+### LASSO and Elastic Net
 
-### KNN
+Penalized logistic regression was fitted with the `glmnet` engine. Two specifications are reported. The elastic-net model tunes both the penalty ($\lambda$) and the mixture (the L1/L2 blend) over a regular 50 × 5 grid via 5-fold cross-validation; the 5-fold cross-validated search selected `mixture = 0.25` (25% L1 / 75% L2 blend — predominantly ridge with a small LASSO component). The pure-LASSO model fixes `mixture = 1` and tunes the penalty alone over 50 log-spaced values. Both optimize ROC AUC, and the final penalty is chosen by the one-standard-error rule (`select_by_one_std_err`), which takes the most heavily penalized model whose CV ROC AUC is within one standard error of the best — favoring sparsity. The L1 penalty is the natural tool for the separation-prone predictors above: it shrinks unstable coefficients toward (elastic net) or exactly to zero (LASSO at the selected penalty).
 
-### CART
+### K-Nearest Neighbors
 
-### Random Forest
+K-nearest-neighbors classification was fitted with the `kknn` engine on the standardized predictor matrix (normalization is essential, since KNN uses Euclidean distance). The number of neighbors was tuned over $k = 5, 10, \ldots, 50$ by 5-fold cross-validation optimizing ROC AUC, with the neighbor count chosen by the one-standard-error rule. KNN was run on the full predictor set (including the separation-prone variables): unlike unpenalized logistic regression it has no coefficients to diverge, so it tolerates those predictors directly.
 
-### Boosted Trees
+### Planned Tree-Based Models (Future Work)
+
+Classification and regression trees (`rpart`), random forests (`ranger`), and gradient-boosted trees (`xgboost`) are planned extensions. They are not yet implemented and are excluded from the results below, which cover the logistic, penalized-logistic, and KNN models.
 
 ## Software
 
-Analyses were conducted with `r stringr::word(R.Version()$version.string, 1, 3)`. The following R packages were used:
-
-```{r tbl-software}
-#| tbl-cap: "R packages used in this analysis."
-
-tibble::tribble(
-  ~Package,               ~Version,                                           ~Purpose,
-  "tidyverse",            as.character(packageVersion("tidyverse")),           "Data manipulation and visualization (ggplot2, dplyr, tidyr, readr, purrr, stringr)",
-  "tidymodels",           as.character(packageVersion("tidymodels")),          "Modeling framework (recipes, parsnip, rsample, yardstick, tune, workflows)",
-  "gtsummary",            as.character(packageVersion("gtsummary")),           "Summary tables",
-  "knitr",                as.character(packageVersion("knitr")),               "Document rendering and table formatting",
-  "public.ctn0094data",   as.character(packageVersion("public.ctn0094data")),  "CTN-0094 harmonized clinical trial data",
-  "conflicted",           as.character(packageVersion("conflicted")),          "Explicit conflict resolution for package namespaces"
-) |>
-  kable(align = "lll", col.names = c("Package", "Version", "Purpose"))
-```
-
-The following packages will be added at modeling time: `glmnet` (LASSO/ridge), `kknn` (KNN), `rpart` (CART), `ranger` (Random Forest), `xgboost` (Boosted Trees). [@R-base; @R-tidyverse; @tidyverse2019; @R-gtsummary]
+Analyses were conducted in `r stringr::word(R.Version()$version.string, 1, 3)`. Data were preprocessed and visualized with the `tidyverse` (version `r packageVersion("tidyverse")`) [@tidyverse2019] and harmonized clinical-trial data were obtained from `public.ctn0094data` (version `r packageVersion("public.ctn0094data")`). Modeling used the tidymodels ecosystem (version `r packageVersion("tidymodels")`) [@R-tidymodels], including `recipes` for preprocessing, `parsnip` for model specification, `rsample` for resampling, `tune` for hyperparameter search, `yardstick` for metrics, and `workflows` to bind them together. Penalized logistic regression used the `glmnet` engine [@R-glmnet], k-nearest-neighbors used `kknn` [@R-kknn], variable importance used `vip` [@R-vip], and summary tables used `gtsummary` (version `r packageVersion("gtsummary")`) [@R-gtsummary].
 
 # Results
 
 ## Participants
 
-```{r tbl-participants}
-#| tbl-cap: "Randomized participants by CTN study."
-
-analysis_base |>
-  count(project) |>
-  mutate(project = as.character(project)) |>
-  kable(col.names = c("Study", "N"), align = "lr")
+```{r participant-counts}
+#| include: false
+n_by_study <- analysis_base |>
+  dplyr::count(project) |>
+  dplyr::mutate(project = as.character(project))
+get_n <- function(study) n_by_study$n[n_by_study$project == study]
 ```
 
-A total of `r nrow(analysis_base)` participants across `r n_distinct(analysis_base$project)` studies were included after restricting to first randomizations (@tbl-participants).
+After restricting to first randomizations, the analysis sample comprised `r nrow(analysis_base) |> scales::comma()` participants: `r get_n("CTN-0027") |> scales::comma()` from CTN-0027, `r get_n("CTN-0030") |> scales::comma()` from CTN-0030, and `r get_n("CTN-0051") |> scales::comma()` from CTN-0051.
 
 ## Participant Characteristics
 
 ```{r tbl-demographics}
-#| tbl-cap: "Baseline participant characteristics by study."
+#| tbl-cap: !expr cap_tbl_demographics
 
 analysis_tibble |>
   select(project, age, is_male, race, is_hispanic,
@@ -183,7 +247,7 @@ analysis_tibble |>
 ## Drug Use in the Pre-Treatment Window
 
 ```{r tbl-drug-prevalence}
-#| tbl-cap: "Substance use categories observed in the 28 days before randomization (days −28 to −1). N users and percentage are relative to the analysis sample."
+#| tbl-cap: !expr cap_tbl_drug
 
 n_analysis <- nrow(analysis_base)
 
@@ -206,7 +270,7 @@ all_drugs_filtered |>
 ## Predictor Distributions
 
 ```{r fig-withdrawal-severity}
-#| fig-cap: "Pre-induction withdrawal severity by CTN study. Scores are derived from the COWS (CTN-0027/0030) or SOWS (CTN-0051) assessment completed before each participant's first MOUD dose (`withdrawal_pre_post`, what == 'pre'). 0 = None, 1 = Mild, 2 = Moderate, 3 = Severe. Participants with no pre-induction assessment recorded are excluded from this figure (n = `r sum(is.na(analysis_tibble$withdrawal_pre_score))` excluded)."
+#| fig-cap: !expr cap_fig_withdrawal
 #| fig-width: 6.5
 #| fig-height: 4.0
 
@@ -223,10 +287,12 @@ analysis_tibble |>
   count(project, severity) |>
   group_by(project) |>
   mutate(pct = n / sum(n) * 100) |>
-  ggplot(aes(x = severity, y = pct, fill = project)) +
+  ggplot(aes(x = severity, y = pct, fill = project)) +  # enriched 6/2
   geom_col(position = "dodge", width = 0.7) +
   scale_fill_brewer(palette = "Set2") +
   labs(
+    title    = "Pre-induction withdrawal severity by study",
+    subtitle = "Percent of each study's participants at each COWS/SOWS severity level",
     x = "Pre-induction withdrawal severity",
     y = "Percentage of participants (%)",
     fill = "Study"
@@ -242,27 +308,7 @@ n_participants <- nrow(analysis_tibble)
 n_features     <- ncol(analysis_tibble) - 2L   # subtract who and project
 ```
 
-```{r tbl-dataset-sample}
-#| tbl-cap: "First six rows of the analysis tibble (selected columns). The full matrix contains `r n_participants` participants and `r n_features` feature columns derived from pre-treatment behavioral and clinical data."
-
-analysis_tibble |>
-  select(
-    who, project, age, is_male,
-    heroin_days, pain_score,
-    withdrawal_pre_score, has_major_dep
-  ) |>
-  slice_head(n = 6) |>
-  kable(
-    col.names = c(
-      "ID", "Study", "Age", "Male",
-      "Heroin days", "Pain score",
-      "Withdrawal score", "Major depression"
-    ),
-    align = "llrrrrrr"
-  )
-```
-
-The analysis tibble contains **`r n_participants` participants** and **`r n_features` feature columns** (excluding participant ID and study assignment). Feature domains span substance use history (per-drug days, binary use, longest streak), polydrug days, drug use breadth, demographics, addiction severity (ASI), nicotine dependence (Fagerström), pain (baseline scalar), psychiatric comorbidity, quality of life, housing stability, heroin denial (TLFB × self-report inconsistency), IV drug use risk behavior, withdrawal severity (pre-induction COWS/SOWS scalar), study treatment arm, site, prescribed medication adherence, and cross-domain interactions.
+The analysis tibble contains **`r n_participants |> scales::comma()` participants** and **`r n_features` engineered feature columns** (excluding participant ID and study assignment), spanning substance-use history (per-drug days, binary use, longest streak), polydrug days, drug-use breadth, demographics, addiction severity (ASI), nicotine dependence (Fagerström), pain, psychiatric comorbidity, quality of life, housing stability, IV-use risk behavior, withdrawal severity, prescribed-medication adherence, study site, and cross-domain interactions. This matrix is shipped as the `analysis_tibble` dataset in the `ctn0094.oliven` package.
 
 ## Logistic Regression
 
@@ -315,7 +361,7 @@ Exclusion proceeded over three iterative rounds. In each round, all predictors w
 Following three rounds of exclusion totaling 15 predictors (beyond `treatment_arm`, which is excluded from both models), all `r nrow(wopv_ci_check)` estimable predictors had well-bounded Wald confidence intervals. The three widest spanned `r round(wopv_top3_ci$log10_width[1], 1)`, `r round(wopv_top3_ci$log10_width[2], 1)`, and `r round(wopv_top3_ci$log10_width[3], 1)` orders of magnitude (`r wopv_top3_ci$term[1]`, `r wopv_top3_ci$term[2]`, and `r wopv_top3_ci$term[3]`, respectively); all remaining intervals were narrower. Seven additional terms had missing coefficient estimates due to exact multicollinearity in the encoded design matrix (rank deficiency); these reflect structural properties of the one-hot and polynomial encodings and are not separation.
 
 ```{r tbl-lr-wopv-metrics}
-#| tbl-cap: "Model performance after exclusion of structurally sparse predictors. Training and test sets from the same stratified 75/25 split (seed 12345) as the baseline logistic regression, enabling direct comparison."
+#| tbl-cap: "Logistic regression (glm, no regularization) performance after exclusion of structurally sparse predictors (SSPs). Training and test sets from a stratified 75/25 split (seed 12345). No cross-validation — the model has no tuning parameters; 5-fold CV performance is shown separately in the all-methods comparison table."
 
 bind_cols(
   lr_metrics_wopv      |> rename(Train = .estimate),
@@ -328,52 +374,75 @@ bind_cols(
   )
 ```
 
-### Cross-Validation
+## Model Performance Across Methods
 
-Ten-fold cross-validation was applied to the cleaned model on the training set to obtain a more stable performance estimate. Each fold held out approximately 10% of training observations (~187 participants); every training observation was held out exactly once. Cross-validated metrics are reported as means across the 10 folds (@tbl-lr-cv-metrics). Fold-to-fold variance in AUC was small, reflecting consistent model behavior across training subsets rather than sensitivity to any particular split.
+```{r tbl-all-metrics}
+#| tbl-cap: !expr cap_all_metrics
 
-```{r tbl-lr-cv-metrics}
-#| tbl-cap: "Ten-fold cross-validated performance of the logistic regression model (without problem variables). Mean and standard error across folds."
+# Normalize the two plain-logistic scripts (which expose .metric/.estimate only)
+# into the shared method/.metric/.estimate shape. # added 6/2
+norm_lr <- function(tbl, label) {
+  tbl |>
+    dplyr::mutate(
+      method  = label,
+      .metric = dplyr::recode(.metric,
+                              sensitivity = "sens", specificity = "spec")
+    ) |>
+    dplyr::select(method, .metric, .estimate)
+}
 
-rs_results |>
-  collect_metrics() |>
-  mutate(.metric = c("Accuracy", "ROC AUC", "Sensitivity", "Specificity")) |>
-  select(.metric, mean, std_err) |>
+all_metrics <- dplyr::bind_rows(
+  norm_lr(lr_test_metrics,      "Logistic (all predictors)"),
+  norm_lr(lr_test_metrics_wopv, "Logistic (no problem vars)"),
+  lr_cv_test_metrics,
+  enet_test_metrics,
+  lasso_test_metrics,
+  knn_test_metrics,
+  knn_wopv_test_metrics
+)
+
+all_metrics |>
+  tidyr::pivot_wider(names_from = .metric, values_from = .estimate) |>
+  dplyr::select(method, roc_auc, accuracy, sens, spec) |>
+  dplyr::arrange(dplyr::desc(roc_auc)) |>
   kable(
     digits    = 3,
-    col.names = c("Metric", "Mean", "SE")
+    col.names = c("Method", "ROC AUC", "Accuracy", "Sensitivity", "Specificity"),
+    align     = "lrrrr"
   )
 ```
 
-```{r fig-lr-cv-roc}
-#| fig-cap: "ROC curves from 10-fold cross-validation. Gray lines show individual fold curves; black line shows the pooled overall curve."
-#| fig-width: 5
-#| fig-height: 5
+The full-predictor and no-problem-variable logistic models perform near-identically on test ROC AUC (`r round(all_metrics$.estimate[all_metrics$method=="Logistic (all predictors)" & all_metrics$.metric=="roc_auc"], 3)` vs `r round(all_metrics$.estimate[all_metrics$method=="Logistic (no problem vars)" & all_metrics$.metric=="roc_auc"], 3)`), so excluding the separation-prone predictors costs essentially no discrimination while removing numerically meaningless coefficients. We therefore consider the no-problem-variable logistic model the most trustworthy linear specification for handling separation. KNN and LASSO, by contrast, are run on the full predictor set: their built-in mechanisms (distance-based prediction and L1 penalization, respectively) absorb the sparse, separating variables without the coefficient blow-up that destabilizes unpenalized logistic regression.
 
-fold_curves   <- rs_results |>
-  collect_predictions() |>
-  group_by(id) |>
-  roc_curve(truth = outcome, .pred_0, event_level = "first")
+## Variable Importance by Engine
 
-overall_curve <- rs_results |>
-  collect_predictions() |>
-  roc_curve(truth = outcome, .pred_0, event_level = "first")
+```{r fig-vip-glm}
+#| fig-cap: !expr cap_vip_glm
+#| fig-width: 6.5
+#| fig-height: 4.5
+vip::vip(lr_wopv_vip_obj, num_features = 15, geom = "col") +
+  ggplot2::labs(title = NULL, x = "Importance (|z-statistic|)", y = NULL) +
+  ggplot2::theme_minimal(base_size = 11)
+```
 
-ggplot() +
-  geom_path(
-    data = fold_curves,
-    aes(x = 1 - specificity, y = sensitivity, group = id),
-    color = "gray70", linewidth = 0.5, alpha = 0.7
-  ) +
-  geom_path(
-    data = overall_curve,
-    aes(x = 1 - specificity, y = sensitivity),
-    color = "black", linewidth = 1.2
-  ) +
-  geom_abline(lty = 3, color = "gray40") +
-  coord_equal() +
-  labs(x = "1 - Specificity", y = "Sensitivity") +
-  theme_minimal(base_size = 11)
+```{r fig-vip-glmnet}
+#| fig-cap: !expr cap_vip_glmnet
+#| fig-width: 6.5
+#| fig-height: 4.5
+ggplot2::ggplot(lasso_coef,
+  ggplot2::aes(x = importance, y = reorder(term, importance))) +
+  ggplot2::geom_col(fill = "grey40") +
+  ggplot2::labs(x = "Importance (|coefficient| at selected lambda)", y = NULL) +
+  ggplot2::theme_minimal(base_size = 11)
+```
+
+```{r fig-vip-knn}
+#| fig-cap: !expr cap_vip_knn
+#| fig-width: 6.5
+#| fig-height: 4.5
+vip::vip(knn_vip_obj, num_features = 15, geom = "col") +
+  ggplot2::labs(x = "Importance (mean ROC AUC decrease)", y = NULL) +
+  ggplot2::theme_minimal(base_size = 11)
 ```
 
 # Discussion
@@ -384,13 +453,64 @@ The preprocessing recipe handles two distinct classes of missingness separately:
 
 The baseline logistic regression achieved a ROC AUC of `r round(lr_metrics$.estimate[lr_metrics$.metric == "roc_auc"], 3)` on training and `r round(lr_test_metrics$.estimate[lr_test_metrics$.metric == "roc_auc"], 3)` on test — a mild to moderate drop consistent with overfitting expected from fitting an unregularized model to 100+ predictors, but still reflecting meaningful discriminative ability above chance. The large estimated associations for study membership (CTN-0030: OR ≈ 42, CTN-0027: OR ≈ 4 in the cleaned model) likely reflect between-study heterogeneity in outcome ascertainment or follow-up design rather than pre-treatment clinical effects, consistent with the challenge of pooling trials with distinct protocols.
 
+## Strengths and Weaknesses by Method
+
+**Logistic regression (glm).** *Strengths:* fully interpretable (odds ratios with confidence intervals), no tuning required, and provides an honest probabilistic baseline. *Weaknesses:* with 100+ predictors and several near-separating sparse indicators, the unpenalized fit is numerically unstable (coefficients and confidence intervals diverge), and it overfits, as seen in the train-to-test ROC AUC drop. Removing the problematic predictors restores stable estimates at essentially no cost to discrimination.
+
+**LASSO / elastic net (glmnet).** *Strengths:* built-in regularization tames the separation-prone predictors and performs automatic feature selection, yielding a sparse, deployable model from the full predictor set; the one-standard-error rule guards against overfitting. *Weaknesses:* penalized coefficients are biased toward zero (shrinkage trades a little unbiasedness for stability), the selected sparse set can be unstable across resampling folds, and standardized penalized coefficients are less directly interpretable as odds ratios than unpenalized estimates.
+
+**K-nearest neighbors (kknn).** *Strengths:* non-parametric and able to capture local, non-linear structure with a single tuning parameter; tolerates the separating predictors without coefficient blow-up. *Weaknesses:* no intrinsic variable importance (we resort to computationally expensive permutation importance), sensitive to the curse of dimensionality with 100+ standardized features, exposes no interpretable model form, and prediction cost grows linearly with the training set.
+
+Across methods, test ROC AUC is similar, indicating that the linear signal is modest and not dramatically improved by KNN's non-parametric flexibility; model choice here is therefore driven as much by interpretability and stability as by discrimination.
+
+## LASSO Sparsity and Predictive Performance
+
+A notable feature of the pure LASSO model is that it retains meaningful predictive performance on a very sparse variable set. Of the approximately 107 candidate predictors entering the penalized fit, only `r nrow(lasso_coef)` survive with non-zero coefficients at the selected penalty (chosen by the 1-SE rule). The surviving predictors are:
+
+```{r lasso-surviving-vars}
+#| echo: false
+lasso_coef |>
+  dplyr::arrange(dplyr::desc(importance)) |>
+  dplyr::pull(term) |>
+  paste(collapse = ", ") |>
+  cat()
+```
+
+Despite discarding `r 107 - nrow(lasso_coef)` predictors entirely, the LASSO test ROC AUC (`r round(all_metrics$.estimate[all_metrics$method == "LASSO" & all_metrics$.metric == "roc_auc"], 3)`) is within `r round(abs(all_metrics$.estimate[all_metrics$method=="LASSO" & all_metrics$.metric=="roc_auc"] - all_metrics$.estimate[all_metrics$method=="Logistic (no problem vars)" & all_metrics$.metric=="roc_auc"]), 3)` AUC points of the unpenalized no-problem-variables logistic regression — a negligible practical difference. This suggests the predictive signal in the pre-treatment feature matrix is concentrated in a small subset of predictors; the remaining features either carry redundant information that the L1 penalty zeros out, or add noise that hurts generalization.
+
+```{r fig-vip-lasso-discussion}
+#| fig-cap: !expr cap_vip_glmnet
+#| fig-width: 6.5
+#| fig-height: 4.5
+ggplot2::ggplot(lasso_coef,
+  ggplot2::aes(x = importance, y = reorder(term, importance))) +
+  ggplot2::geom_col(fill = "grey40") +
+  ggplot2::labs(
+    title    = "LASSO surviving predictors at the selected penalty",
+    subtitle = paste0(nrow(lasso_coef), " non-zero coefficients of ~107 total"),
+    x        = "Importance (|coefficient| at selected lambda)",
+    y        = NULL
+  ) +
+  ggplot2::theme_minimal(base_size = 11)
+```
+
+## Study Membership as a Predictor
+
+Study membership (`project_X30` and `project_X27` in the one-hot encoded feature matrix — with `project_X51` as the reference level) appears among the stronger predictors in the logistic regression (OR ≈ 42 for CTN-0030, OR ≈ 4 for CTN-0027 relative to CTN-0051). This warrants explanation.
+
+Study membership is **not leakage**: it is known at enrollment, before any treatment is assigned or administered, and it does not encode which treatment a participant received within a study (that is `treatment_arm`, which was explicitly excluded from all models). It is legitimate predictor information in the same way that enrolling site or referral source would be.
+
+*Interpretation (speculative):* The large study effects likely reflect at least three overlapping mechanisms. First, and probably dominant, each trial enrolled a distinct **population**: eligibility criteria, geographic sites, time periods, and demographic compositions differed across CTN-0027, -0030, and -0051, and those population-level differences translate into genuine between-study differences in baseline relapse risk. Second, each study carried a distinct **protocol context** — infrastructure, follow-up schedule, and clinical staffing — that is non-leaky and may itself influence outcome. Note that this is distinct from the specific treatment a participant received within the study: participants were randomized to different arms within each trial, so `project` does not encode which drug or regimen a given participant got (that is `treatment_arm`, excluded). Third, the harmonized outcome variable `lee2018_rel_event` was constructed from studies using different assessment instruments (COWS vs. SOWS), follow-up windows, and ascertainment methods; some of the project effect may reflect **outcome measurement heterogeneity** across protocols rather than true differences in relapse. This last point is a limitation of pooled-trial analysis generally.
+
+*Generalizability caveat (speculative):* Because `project` is a coarse proxy for all of the above, the model as trained may not generalize well to new studies with different populations or protocols. A more generalizable version would encode features of the population and treatment setting directly (e.g., eligibility criteria, medication type, treatment duration, site support resources) rather than relying on study-membership dummies — replacing the proxy with its constituents.
+
 # References {.unnumbered}
 
 ```{r make-references}
 #| include: false
 
 knitr::write_bib(
-  c(.packages(), "rUM"),
+  c(.packages(), "rUM", "glmnet", "kknn", "vip", "tidymodels"),
   "packages.bib"
 )
 ```
