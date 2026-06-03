@@ -148,7 +148,7 @@ This study uses data from three NIDA Clinical Trials Network studies (CTN-0027, 
 
 Opioid use disorder is associated with substantial mortality, morbidity, and economic burden in the United States. Medications for OUD (MOUD) — including methadone, buprenorphine-naloxone, and extended-release naltrexone — are effective treatments, yet individual response varies considerably. Matching patients to the treatment most likely to benefit them remains a central challenge in addiction medicine.
 
-The CTN-0094 harmonized dataset combines three randomized clinical trials comparing MOUD regimens in opioid-dependent adults. By pooling data across studies, we have sufficient sample size to examine whether pre-treatment characteristics predict treatment response. The goal of this analysis is to build and evaluate a feature matrix capturing the 28 days prior to randomization, which will serve as input to predictive models of relapse outcomes.
+The CTN-0094 harmonized dataset combines three randomized clinical trials comparing MOUD regimens in opioid-dependent adults [@ctn0027; @ctn0030; @ctn0051]. By pooling data across studies, we have sufficient sample size to examine whether pre-treatment characteristics predict treatment response. The goal of this analysis is to build and evaluate a feature matrix capturing the 28 days prior to randomization, which will serve as input to predictive models of relapse outcomes.
 
 # Methods
 
