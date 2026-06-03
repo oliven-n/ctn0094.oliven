@@ -463,6 +463,37 @@ The baseline logistic regression achieved a ROC AUC of `r round(lr_metrics$.esti
 
 Across methods, test ROC AUC is similar, indicating that the linear signal is modest and not dramatically improved by KNN's non-parametric flexibility; model choice here is therefore driven as much by interpretability and stability as by discrimination.
 
+## LASSO Sparsity and Predictive Performance
+
+A notable feature of the pure LASSO model is that it retains meaningful predictive performance on a very sparse variable set. Of the approximately 107 candidate predictors entering the penalized fit, only `r nrow(lasso_coef)` survive with non-zero coefficients at the selected penalty (chosen by the 1-SE rule). The surviving predictors are:
+
+```{r lasso-surviving-vars}
+#| echo: false
+lasso_coef |>
+  dplyr::arrange(dplyr::desc(importance)) |>
+  dplyr::pull(term) |>
+  paste(collapse = ", ") |>
+  cat()
+```
+
+Despite discarding `r 107 - nrow(lasso_coef)` predictors entirely, the LASSO test ROC AUC (`r round(all_metrics$.estimate[all_metrics$method == "LASSO" & all_metrics$.metric == "roc_auc"], 3)`) is within `r round(abs(all_metrics$.estimate[all_metrics$method=="LASSO" & all_metrics$.metric=="roc_auc"] - all_metrics$.estimate[all_metrics$method=="Logistic (no problem vars)" & all_metrics$.metric=="roc_auc"]), 3)` AUC points of the unpenalized no-problem-variables logistic regression — a negligible practical difference. This suggests the predictive signal in the pre-treatment feature matrix is concentrated in a small subset of predictors; the remaining features either carry redundant information that the L1 penalty zeros out, or add noise that hurts generalization.
+
+```{r fig-vip-lasso-discussion}
+#| fig-cap: !expr cap_vip_glmnet
+#| fig-width: 6.5
+#| fig-height: 4.5
+ggplot2::ggplot(lasso_coef,
+  ggplot2::aes(x = importance, y = reorder(term, importance))) +
+  ggplot2::geom_col(fill = "grey40") +
+  ggplot2::labs(
+    title    = "LASSO surviving predictors at the selected penalty",
+    subtitle = paste0(nrow(lasso_coef), " non-zero coefficients of ~107 total"),
+    x        = "Importance (|coefficient| at selected lambda)",
+    y        = NULL
+  ) +
+  ggplot2::theme_minimal(base_size = 11)
+```
+
 ## Study Membership as a Predictor
 
 Study membership (`project_X30` and `project_X27` in the one-hot encoded feature matrix — with `project_X51` as the reference level) appears among the stronger predictors in the logistic regression (OR ≈ 42 for CTN-0030, OR ≈ 4 for CTN-0027 relative to CTN-0051). This warrants explanation.
