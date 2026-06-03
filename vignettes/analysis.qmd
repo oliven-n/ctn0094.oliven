@@ -114,6 +114,8 @@ All longitudinal features are derived from a 28-day pre-randomization window (da
 
 All models predict a binary relapse outcome from the pre-treatment feature matrix. Candidate models span interpretable baselines through high-capacity ensemble methods. Final model selection will be based on cross-validated area under the ROC curve (AUC-ROC).
 
+All models share a single `recipes` preprocessing pipeline applied inside each `workflow`, so that resampling re-estimates every data-dependent step on the analysis fold only (no leakage). The recipe gives `who` an ID role; removes treatment-arm leakage variables (`treatment_arm` and its medication-type proxies) and zero-variance columns; handles missingness in two tiers — structural study-level missingness gets an explicit `step_indicate_na()` indicator before median/mode imputation, while sporadic item-level missingness is median/mode imputed without an indicator; scores ordered factors with `step_ordinalscore()` where equal spacing is defensible; standardizes all numeric predictors with `step_normalize()`; one-hot encodes unordered factors and uses polynomial contrasts for cigarettes-per-day; and finally drops predictors correlated above |r| = 0.90 with `step_corr()`.
+
 ::: {.callout-important title="NOTE TO SELF — REMOVE BEFORE SUBMISSION"}
 
 **Metric-priority reasoning (settle before writing the Discussion):**
@@ -130,17 +132,19 @@ All models predict a binary relapse outcome from the pre-treatment feature matri
 
 ### Logistic Regression
 
-Standard binary logistic regression models the log-odds of relapse as a linear combination of predictors. Used as the interpretable baseline. Estimated via maximum likelihood; no regularization. Implemented in `tidymodels` using the `glm` engine.
+Standard binary logistic regression models the log-odds of relapse as a linear combination of predictors. Used as the interpretable baseline. Estimated via maximum likelihood; no regularization. Implemented in `tidymodels` using the `glm` engine. Two variants are reported: the full-predictor baseline, and a "no problem variables" model that additionally removes predictors exhibiting complete separation (sparse drug-use indicators whose maximum-likelihood estimate does not exist). Because ordinary logistic regression has no tuning parameters, generalization is estimated by 10-fold cross-validation with `fit_resamples()`, optimizing for — and reporting — cross-validated ROC AUC.
 
-### LASSO
+### LASSO and Elastic Net
 
-### KNN
+Penalized logistic regression was fitted with the `glmnet` engine. Two specifications are reported. The elastic-net model tunes both the penalty ($\lambda$) and the mixture (the L1/L2 blend) over a regular 50 × 5 grid via 10-fold cross-validation; the cross-validated search selected `mixture = 0` (pure ridge). The pure-LASSO model fixes `mixture = 1` and tunes the penalty alone over 50 log-spaced values. Both optimize ROC AUC, and the final penalty is chosen by the one-standard-error rule (`select_by_one_std_err`), which takes the most heavily penalized model whose CV ROC AUC is within one standard error of the best — favoring sparsity. The L1 penalty is the natural tool for the separation-prone predictors above: it shrinks unstable coefficients toward (elastic net) or exactly to zero (LASSO at the selected penalty).
 
-### CART
+### K-Nearest Neighbors
 
-### Random Forest
+K-nearest-neighbors classification was fitted with the `kknn` engine on the standardized predictor matrix (normalization is essential, since KNN uses Euclidean distance). The number of neighbors was tuned over $k = 5, 10, \ldots, 50$ by 10-fold cross-validation optimizing ROC AUC, with the neighbor count chosen by the one-standard-error rule. KNN was run on the full predictor set (including the separation-prone variables): unlike unpenalized logistic regression it has no coefficients to diverge, so it tolerates those predictors directly.
 
-### Boosted Trees
+### Planned Tree-Based Models (Future Work)
+
+Classification and regression trees (`rpart`), random forests (`ranger`), and gradient-boosted trees (`xgboost`) are planned extensions. They are not yet implemented and are excluded from the results below, which cover the logistic, penalized-logistic, and KNN models.
 
 ## Software
 
