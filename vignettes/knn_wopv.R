@@ -45,14 +45,15 @@ relapse_pred_knn <-
   predict(knn_fit, train_data_wopv, type = "prob") |>
   bind_cols(train_data_wopv |> select(outcome))
 
-# ROC/AUC Plot
+# ROC/AUC Plot (train) — enriched with title/labels. # enriched 6/2
 relapse_pred_knn |>
-  roc_curve(
-    truth = outcome,
-    .pred_1,
-    event_level = "second"
-  ) |>
-  autoplot()
+  roc_curve(truth = outcome, .pred_1, event_level = "second") |>
+  autoplot() +
+  ggplot2::labs(
+    title    = "KNN (no problem vars): training ROC curve",
+    subtitle = "Relapse as the positive class; neighbors selected by 1-SE rule",
+    x = "1 - Specificity", y = "Sensitivity"
+  )
 
 # ROC/AUC Score table
 relapse_pred_knn |>
@@ -88,6 +89,48 @@ relapse_pred_knn_test <-
   predict(knn_fit, test_data_wopv, type = "prob") |>
   bind_cols(test_data_wopv |> select(outcome))
 
+# enriched 6/2
 relapse_pred_knn_test |>
   roc_curve(truth = outcome, .pred_1, event_level = "second") |>
-  autoplot()
+  autoplot() +
+  ggplot2::labs(
+    title    = "KNN (no problem vars): test ROC curve",
+    subtitle = "Held-out 25% test split; relapse as the positive class",
+    x = "1 - Specificity", y = "Sensitivity"
+  )
+
+# Look at Variable Importance ------
+# KNN has no intrinsic coefficients, so we use model-agnostic PERMUTATION
+# importance: shuffle one predictor at a time and measure the drop in test ROC
+# AUC. A bigger drop = a more important predictor. # added 6/2
+library(vip)
+
+knn_auc_metric <- function(truth, estimate) {
+  yardstick::roc_auc_vec(truth = truth, estimate = estimate, event_level = "second")
+}
+
+set.seed(12345)
+knn_wopv_vip_obj <- vip::vi_permute(
+  object        = knn_fit,
+  feature_names = setdiff(names(train_data_wopv), c("who", "outcome")),
+  train         = train_data_wopv,
+  target        = "outcome",
+  metric        = knn_auc_metric,
+  smaller_is_better = FALSE,
+  pred_wrapper  = function(object, newdata) {
+    # vip subsets newdata to feature_names, dropping the `who` ID column the
+    # recipe needs; re-add a dummy (who has role "ID", so it never affects preds).
+    if (!"who" %in% names(newdata)) newdata$who <- 1L
+    predict(object, newdata, type = "prob")$.pred_1
+  },
+  nsim = 10
+)
+
+vip::vip(knn_wopv_vip_obj, num_features = 15, geom = "col") +
+  ggplot2::labs(
+    title    = "KNN (no problem vars) permutation variable importance",
+    subtitle = "Mean drop in test ROC AUC when each predictor is shuffled (10 permutations)",
+    x        = "Importance (mean ROC AUC decrease)",
+    y        = NULL
+  ) +
+  ggplot2::theme_minimal(base_size = 11)

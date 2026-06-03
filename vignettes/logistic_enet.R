@@ -100,14 +100,15 @@ relapse_pred_enet <-
   predict(enet_fit, train_data, type = "prob") |>
   bind_cols(train_data |> select(outcome))
 
-# ROC/AUC Plot
+# ROC/AUC Plot (train) — enriched with title/labels. # enriched 6/2
 relapse_pred_enet |>
-  roc_curve(
-    truth = outcome,
-    .pred_1,
-    event_level = "second"
-  ) |>
-  autoplot()
+  roc_curve(truth = outcome, .pred_1, event_level = "second") |>
+  autoplot() +
+  ggplot2::labs(
+    title    = "Elastic net (ridge): training ROC curve",
+    subtitle = "Relapse as the positive class; 28-day pre-treatment predictors",
+    x = "1 - Specificity", y = "Sensitivity"
+  )
 
 # ROC/AUC Score table
 # roc_auc() returns the single auc number and has one row with .metric/.estimator/.estimate
@@ -158,14 +159,19 @@ enet_fit |>
   extract_fit_parsnip() |>
   tidy()
 
-# Review Fit on the Test Data ------
+# Review Fit on the Test Data ------ enriched 6/2
 relapse_pred_enet_test <-
   predict(enet_fit, test_data, type = "prob") |>
   bind_cols(test_data |> select(outcome))
 
 relapse_pred_enet_test |>
   roc_curve(truth = outcome, .pred_1, event_level = "second") |>
-  autoplot()
+  autoplot() +
+  ggplot2::labs(
+    title    = "Elastic net (ridge): test ROC curve",
+    subtitle = "Held-out 25% test split; relapse as the positive class",
+    x = "1 - Specificity", y = "Sensitivity"
+  )
 
 
 # ── Pure LASSO ───────────────────────────────────────────────────────────────
@@ -212,9 +218,15 @@ relapse_pred_lasso <-
   predict(lasso_fit, train_data, type = "prob") |>
   bind_cols(train_data |> select(outcome))
 
+# ROC/AUC Plot (train) — enriched with title/labels. # enriched 6/2
 relapse_pred_lasso |>
   roc_curve(truth = outcome, .pred_1, event_level = "second") |>
-  autoplot()
+  autoplot() +
+  ggplot2::labs(
+    title    = "Pure LASSO: training ROC curve",
+    subtitle = "Relapse as the positive class; 28-day pre-treatment predictors",
+    x = "1 - Specificity", y = "Sensitivity"
+  )
 
 relapse_pred_lasso |>
   roc_auc(truth = outcome, .pred_1, event_level = "second")
@@ -266,9 +278,15 @@ relapse_pred_lasso_test <-
   predict(lasso_fit, test_data, type = "prob") |>
   bind_cols(test_data |> select(outcome))
 
+# enriched 6/2
 relapse_pred_lasso_test |>
   roc_curve(truth = outcome, .pred_1, event_level = "second") |>
-  autoplot()
+  autoplot() +
+  ggplot2::labs(
+    title    = "Pure LASSO: test ROC curve",
+    subtitle = "Held-out 25% test split; relapse as the positive class",
+    x = "1 - Specificity", y = "Sensitivity"
+  )
 
 
 # ── Shrinkage Plots (given mixture settings) ─────────────────────────────────
