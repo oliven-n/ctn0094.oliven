@@ -78,6 +78,18 @@ source("logistic_regression_wopv_kfold.R")
 source("knn.R")
 ```
 
+```{r knn-wopv}
+#| include: false
+#| cache-extra: !expr digest::digest(readLines("knn_wopv.R"))
+source("knn_wopv.R")
+```
+
+```{r logistic-enet}
+#| include: false
+#| cache-extra: !expr digest::digest(readLines("logistic_enet.R"))
+source("logistic_enet.R")
+```
+
 # Abstract
 
 This study uses data from three NIDA Clinical Trials Network studies (CTN-0027, CTN-0030, CTN-0051) to build a predictive model of treatment response in people with opioid use disorder (OUD). We construct a pre-treatment feature matrix from behavioral, substance use, demographic, and clinical data in the 28 days before randomization, and evaluate whether these features predict relapse during the treatment period.
@@ -92,7 +104,7 @@ The CTN-0094 harmonized dataset combines three randomized clinical trials compar
 
 ## Subjects
 
-Data come from three NIDA Clinical Trials Network studies harmonized in the `public.ctn0094data` R package: CTN-0027 (methadone vs. buprenorphine-naloxone), CTN-0030 (buprenorphine-naloxone only), and CTN-0051 (extended-release naltrexone vs. buprenorphine-naloxone). Eligibility criteria for all three trials required a DSM-IV diagnosis of opioid dependence, age ≥ 18 years, and provision of informed consent. Only participants' first randomization is included; the CTN-0030 re-randomization step is excluded. The analysis sample includes `r nrow(analysis_base)` participants across `r n_distinct(analysis_base$project)` studies.
+Data come from three NIDA Clinical Trials Network studies harmonized in the `public.ctn0094data` R package: CTN-0027 (methadone vs. buprenorphine-naloxone), CTN-0030 (buprenorphine-naloxone only), and CTN-0051 (extended-release naltrexone vs. buprenorphine-naloxone). Eligibility criteria for all three trials required a DSM-IV diagnosis of opioid dependence, age ≥ 18 years, and provision of informed consent. Only participants' first randomization is included; the CTN-0030 re-randomization step is excluded. The analysis sample includes `r nrow(analysis_base) |> scales::comma()` care-seeking adults with opioid use disorder, drawn from `r n_distinct(analysis_base$project) |> xfun::n2w()` harmonized NIDA Clinical Trials Network studies (CTN-0027, CTN-0030 and CTN-0051) conducted between 2006 and 2016.
 
 ## Feature Engineering
 
@@ -132,44 +144,26 @@ Standard binary logistic regression models the log-odds of relapse as a linear c
 
 ## Software
 
-Analyses were conducted with `r stringr::word(R.Version()$version.string, 1, 3)`. The following R packages were used:
-
-```{r tbl-software}
-#| tbl-cap: "R packages used in this analysis."
-
-tibble::tribble(
-  ~Package,               ~Version,                                           ~Purpose,
-  "tidyverse",            as.character(packageVersion("tidyverse")),           "Data manipulation and visualization (ggplot2, dplyr, tidyr, readr, purrr, stringr)",
-  "tidymodels",           as.character(packageVersion("tidymodels")),          "Modeling framework (recipes, parsnip, rsample, yardstick, tune, workflows)",
-  "gtsummary",            as.character(packageVersion("gtsummary")),           "Summary tables",
-  "knitr",                as.character(packageVersion("knitr")),               "Document rendering and table formatting",
-  "public.ctn0094data",   as.character(packageVersion("public.ctn0094data")),  "CTN-0094 harmonized clinical trial data",
-  "conflicted",           as.character(packageVersion("conflicted")),          "Explicit conflict resolution for package namespaces"
-) |>
-  kable(align = "lll", col.names = c("Package", "Version", "Purpose"))
-```
-
-The following packages will be added at modeling time: `glmnet` (LASSO/ridge), `kknn` (KNN), `rpart` (CART), `ranger` (Random Forest), `xgboost` (Boosted Trees). [@R-base; @R-tidyverse; @tidyverse2019; @R-gtsummary]
+Analyses were conducted in `r stringr::word(R.Version()$version.string, 1, 3)`. Data were preprocessed and visualized with the `tidyverse` (version `r packageVersion("tidyverse")`) [@tidyverse2019] and harmonized clinical-trial data were obtained from `public.ctn0094data` (version `r packageVersion("public.ctn0094data")`). Modeling used the tidymodels ecosystem (version `r packageVersion("tidymodels")`) [@R-tidymodels], including `recipes` for preprocessing, `parsnip` for model specification, `rsample` for resampling, `tune` for hyperparameter search, `yardstick` for metrics, and `workflows` to bind them together. Penalized logistic regression used the `glmnet` engine [@R-glmnet], k-nearest-neighbors used `kknn` [@R-kknn], variable importance used `vip` [@R-vip], and summary tables used `gtsummary` (version `r packageVersion("gtsummary")`) [@R-gtsummary].
 
 # Results
 
 ## Participants
 
-```{r tbl-participants}
-#| tbl-cap: "Randomized participants by CTN study."
-
-analysis_base |>
-  count(project) |>
-  mutate(project = as.character(project)) |>
-  kable(col.names = c("Study", "N"), align = "lr")
+```{r participant-counts}
+#| include: false
+n_by_study <- analysis_base |>
+  dplyr::count(project) |>
+  dplyr::mutate(project = as.character(project))
+get_n <- function(study) n_by_study$n[n_by_study$project == study]
 ```
 
-A total of `r nrow(analysis_base)` participants across `r n_distinct(analysis_base$project)` studies were included after restricting to first randomizations (@tbl-participants).
+After restricting to first randomizations, the analysis sample comprised `r nrow(analysis_base) |> scales::comma()` participants: `r get_n("CTN-0027") |> scales::comma()` from CTN-0027, `r get_n("CTN-0030") |> scales::comma()` from CTN-0030, and `r get_n("CTN-0051") |> scales::comma()` from CTN-0051.
 
 ## Participant Characteristics
 
 ```{r tbl-demographics}
-#| tbl-cap: "Baseline participant characteristics by study."
+#| tbl-cap: !expr paste0("Baseline characteristics of the ", scales::comma(nrow(analysis_tibble)), " care-seeking adults with opioid use disorder in CTN-0027, CTN-0030 and CTN-0051 (2006-2016), by study.")
 
 analysis_tibble |>
   select(project, age, is_male, race, is_hispanic,
@@ -199,7 +193,7 @@ analysis_tibble |>
 ## Drug Use in the Pre-Treatment Window
 
 ```{r tbl-drug-prevalence}
-#| tbl-cap: "Substance use categories observed in the 28 days before randomization (days −28 to −1). N users and percentage are relative to the analysis sample."
+#| tbl-cap: !expr paste0("Substance-use categories observed in the 28 days before randomization (days -28 to -1) among the ", scales::comma(nrow(analysis_base)), " CTN-0027/0030/0051 participants (2006-2016). N users and percentage are relative to the analysis sample.")
 
 n_analysis <- nrow(analysis_base)
 
@@ -222,7 +216,7 @@ all_drugs_filtered |>
 ## Predictor Distributions
 
 ```{r fig-withdrawal-severity}
-#| fig-cap: "Pre-induction withdrawal severity by CTN study. Scores are derived from the COWS (CTN-0027/0030) or SOWS (CTN-0051) assessment completed before each participant's first MOUD dose (`withdrawal_pre_post`, what == 'pre'). 0 = None, 1 = Mild, 2 = Moderate, 3 = Severe. Participants with no pre-induction assessment recorded are excluded from this figure (n = `r sum(is.na(analysis_tibble$withdrawal_pre_score))` excluded)."
+#| fig-cap: !expr paste0("Pre-induction withdrawal severity among care-seeking adults with opioid use disorder in CTN-0027, CTN-0030 and CTN-0051 (2006-2016). Scores derive from COWS (CTN-0027/0030) or SOWS (CTN-0051) before each participant's first MOUD dose. 0 = None, 1 = Mild, 2 = Moderate, 3 = Severe. Participants with no pre-induction assessment are excluded (n = ", sum(is.na(analysis_tibble$withdrawal_pre_score)), " excluded).")
 #| fig-width: 6.5
 #| fig-height: 4.0
 
@@ -239,10 +233,12 @@ analysis_tibble |>
   count(project, severity) |>
   group_by(project) |>
   mutate(pct = n / sum(n) * 100) |>
-  ggplot(aes(x = severity, y = pct, fill = project)) +
+  ggplot(aes(x = severity, y = pct, fill = project)) +  # enriched 6/2
   geom_col(position = "dodge", width = 0.7) +
   scale_fill_brewer(palette = "Set2") +
   labs(
+    title    = "Pre-induction withdrawal severity by study",
+    subtitle = "Percent of each study's participants at each COWS/SOWS severity level",
     x = "Pre-induction withdrawal severity",
     y = "Percentage of participants (%)",
     fill = "Study"
@@ -258,27 +254,7 @@ n_participants <- nrow(analysis_tibble)
 n_features     <- ncol(analysis_tibble) - 2L   # subtract who and project
 ```
 
-```{r tbl-dataset-sample}
-#| tbl-cap: "First six rows of the analysis tibble (selected columns). The full matrix contains `r n_participants` participants and `r n_features` feature columns derived from pre-treatment behavioral and clinical data."
-
-analysis_tibble |>
-  select(
-    who, project, age, is_male,
-    heroin_days, pain_score,
-    withdrawal_pre_score, has_major_dep
-  ) |>
-  slice_head(n = 6) |>
-  kable(
-    col.names = c(
-      "ID", "Study", "Age", "Male",
-      "Heroin days", "Pain score",
-      "Withdrawal score", "Major depression"
-    ),
-    align = "llrrrrrr"
-  )
-```
-
-The analysis tibble contains **`r n_participants` participants** and **`r n_features` feature columns** (excluding participant ID and study assignment). Feature domains span substance use history (per-drug days, binary use, longest streak), polydrug days, drug use breadth, demographics, addiction severity (ASI), nicotine dependence (Fagerström), pain (baseline scalar), psychiatric comorbidity, quality of life, housing stability, heroin denial (TLFB × self-report inconsistency), IV drug use risk behavior, withdrawal severity (pre-induction COWS/SOWS scalar), study treatment arm, site, prescribed medication adherence, and cross-domain interactions.
+The analysis tibble contains **`r n_participants |> scales::comma()` participants** and **`r n_features` engineered feature columns** (excluding participant ID and study assignment), spanning substance-use history (per-drug days, binary use, longest streak), polydrug days, drug-use breadth, demographics, addiction severity (ASI), nicotine dependence (Fagerström), pain, psychiatric comorbidity, quality of life, housing stability, IV-use risk behavior, withdrawal severity, prescribed-medication adherence, study site, and cross-domain interactions. This matrix is shipped as the `analysis_tibble` dataset in the `ctn0094.oliven` package.
 
 ## Logistic Regression
 
