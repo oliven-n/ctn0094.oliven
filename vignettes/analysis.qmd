@@ -463,6 +463,16 @@ The baseline logistic regression achieved a ROC AUC of `r round(lr_metrics$.esti
 
 Across methods, test ROC AUC is similar, indicating that the linear signal is modest and not dramatically improved by KNN's non-parametric flexibility; model choice here is therefore driven as much by interpretability and stability as by discrimination.
 
+## Study Membership as a Predictor
+
+Study membership (`project_X30` and `project_X27` in the one-hot encoded feature matrix — with `project_X51` as the reference level) appears among the stronger predictors in the logistic regression (OR ≈ 42 for CTN-0030, OR ≈ 4 for CTN-0027 relative to CTN-0051). This warrants explanation.
+
+Study membership is **not leakage**: it is known at enrollment, before any treatment is assigned or administered, and it does not encode which treatment a participant received within a study (that is `treatment_arm`, which was explicitly excluded from all models). It is legitimate predictor information in the same way that enrolling site or referral source would be.
+
+*Interpretation (speculative):* The large study effects likely reflect a combination of two mechanisms. First, each trial enrolled a distinct population under different eligibility criteria — CTN-0030 (buprenorphine-naloxone dose study) and CTN-0027 (buprenorphine vs. methadone) enrolled participants with different baseline clinical profiles from CTN-0051 (XR-naltrexone vs. buprenorphine), and those population differences are genuine predictive signals. Second, each study represents a specific treatment ecosystem — protocols, clinical support structures, follow-up design, and staffing — that directly shapes how participants fare. In this sense, `project` acts as a proxy for the entire care environment the participant enters, which is directly related to the interventions and support they receive. The model is therefore not "learning the study label" in a meaningless way; it is learning that care context predicts outcome, which is clinically real.
+
+*Generalizability caveat (speculative):* Because `project` is a coarse proxy, the model as trained may not generalize well to new studies with different protocols or populations. A more generalizable version would encode features of the treatment and clinical setting directly (e.g., medication type, session frequency, treatment duration, site support resources) rather than relying on study-membership dummies. Encoding treatment features rather than the project proxy is a meaningful direction for future model development.
+
 # References {.unnumbered}
 
 ```{r make-references}
