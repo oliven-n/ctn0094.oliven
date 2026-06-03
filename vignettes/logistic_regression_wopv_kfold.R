@@ -17,14 +17,12 @@ set.seed(12345)
 # it just affects the variance of ur performance estimate (more folds = lower var)
 folds <- vfold_cv(train_data_wopv, v = 5, strata = outcome)
 
-# metric tweak real quick, so we dont have to do event_level = second everywhere
-#accuracy is symmetric so we dont need for it
-
-roc_auc2 <- metric_tweak("roc_auc", roc_auc, event_level = "second")
-sens2     <- metric_tweak("sens",    sensitivity, event_level = "second")
-spec2     <- metric_tweak("spec",    specificity, event_level = "second")
-
-class_metrics <- metric_set(accuracy, roc_auc2, sens2, spec2)
+# metric_tweak("roc_auc", roc_auc, event_level = "second") produces a reflected
+# (1 - correct) AUC inside fit_resamples — do not use it. Use plain roc_auc
+# (direction-agnostic: scoring "0"s high via .pred_0 == scoring "1"s high via
+# .pred_1 for AUC). Build lr_cv_test_metrics from collect_predictions() with
+# explicit event_level = "second", matching every other method in the table.
+class_metrics <- metric_set(accuracy, roc_auc)
 
 # fit (fit means train on data) resamples
 #fit_resamples() is for performance estimation only
@@ -42,14 +40,21 @@ stopCluster(cl)
 rs_results |> collect_metrics(summarize = FALSE)
 rs_results |> collect_metrics()
 
-# Named metric tibble (CV means) for the comparison table in analysis.qmd. # added 6/2
-lr_cv_test_metrics <- rs_results |>
-  collect_metrics() |>
+# Named metric tibble for the comparison table in analysis.qmd. # added 6/2
+# Built from collect_predictions() so event_level = "second" is explicit.
+# Youden-J cutoff on pooled held-out predictions (analogous to train-chosen cutoff).
+cv_preds  <- collect_predictions(rs_results)
+lr_cv_cut <- youden_cutoff(cv_preds)
+
+lr_cv_test_metrics <- dplyr::bind_rows(
+  roc_auc( cv_preds, truth = outcome, .pred_1, event_level = "second"),
+  accuracy(cv_preds, truth = outcome, estimate = .pred_class),
+  sens_spec_at(cv_preds, lr_cv_cut)
+) |>
   dplyr::transmute(
-    method   = "Logistic (10-fold CV, no problem vars)",
-    .metric  = dplyr::recode(.metric, sens = "sens", spec = "spec",
-                             accuracy = "accuracy", roc_auc = "roc_auc"),
-    .estimate = mean
+    method    = "Logistic (5-fold CV, no problem vars)",
+    .metric,
+    .estimate
   )
 
 # roc curve
@@ -91,6 +96,6 @@ ggplot() +
   labs(
     x = "1 - Specificity",
     y = "Sensitivity",
-    title = "ROC curve — 10-fold CV (gray = individual folds, black = pooled)"
+    title = "ROC curve — 5-fold CV (gray = individual folds, black = pooled)"
   ) +
   theme_minimal(base_size = 11)
