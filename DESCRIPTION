@@ -33,3 +33,6 @@ Suggests:
     vip,
     xfun
 VignetteBuilder: quarto
+Depends: 
+    R (>= 3.5)
+LazyData: true

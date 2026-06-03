@@ -168,3 +168,9 @@ analysis_files
 
 # Branch backup archives (not source files)
 *.zip
+
+# --- Package dataset (tracked despite the broad data/ and *.rda ignores above) ---
+!data/
+!data/analysis_tibble.rda
+!data-raw/
+!data-raw/analysis_tibble.R
