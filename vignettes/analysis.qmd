@@ -324,6 +324,77 @@ bind_cols(
   )
 ```
 
+## Model Performance Across Methods
+
+```{r tbl-all-metrics}
+#| tbl-cap: !expr paste0("Test-set performance of all fitted models for predicting relapse among the ", scales::comma(nrow(analysis_tibble)), " care-seeking adults with opioid use disorder in CTN-0027/0030/0051 (2006-2016). ROC AUC is threshold-free; sensitivity and specificity are reported at the Youden-J operating point chosen on the training set. The logistic CV row reports 10-fold cross-validated means.")
+
+# Normalize the two plain-logistic scripts (which expose .metric/.estimate only)
+# into the shared method/.metric/.estimate shape. # added 6/2
+norm_lr <- function(tbl, label) {
+  tbl |>
+    dplyr::mutate(
+      method  = label,
+      .metric = dplyr::recode(.metric,
+                              sensitivity = "sens", specificity = "spec")
+    ) |>
+    dplyr::select(method, .metric, .estimate)
+}
+
+all_metrics <- dplyr::bind_rows(
+  norm_lr(lr_test_metrics,      "Logistic (all predictors)"),
+  norm_lr(lr_test_metrics_wopv, "Logistic (no problem vars)"),
+  lr_cv_test_metrics,
+  enet_test_metrics,
+  lasso_test_metrics,
+  knn_test_metrics,
+  knn_wopv_test_metrics
+)
+
+all_metrics |>
+  tidyr::pivot_wider(names_from = .metric, values_from = .estimate) |>
+  dplyr::select(method, roc_auc, accuracy, sens, spec) |>
+  dplyr::arrange(dplyr::desc(roc_auc)) |>
+  kable(
+    digits    = 3,
+    col.names = c("Method", "ROC AUC", "Accuracy", "Sensitivity", "Specificity"),
+    align     = "lrrrr"
+  )
+```
+
+The full-predictor and no-problem-variable logistic models perform near-identically on test ROC AUC (`r round(all_metrics$.estimate[all_metrics$method=="Logistic (all predictors)" & all_metrics$.metric=="roc_auc"], 3)` vs `r round(all_metrics$.estimate[all_metrics$method=="Logistic (no problem vars)" & all_metrics$.metric=="roc_auc"], 3)`), so excluding the separation-prone predictors costs essentially no discrimination while removing numerically meaningless coefficients. We therefore consider the no-problem-variable logistic model the most trustworthy linear specification for handling separation. KNN and LASSO, by contrast, are run on the full predictor set: their built-in mechanisms (distance-based prediction and L1 penalization, respectively) absorb the sparse, separating variables without the coefficient blow-up that destabilizes unpenalized logistic regression.
+
+## Variable Importance by Engine
+
+```{r fig-vip-glm}
+#| fig-cap: "Logistic-regression (glm engine) variable importance for predicting relapse among CTN-0027/0030/0051 participants (2006-2016), ranked by absolute z-statistic; problem variables excluded."
+#| fig-width: 6.5
+#| fig-height: 4.5
+vip::vip(lr_wopv_vip_obj, num_features = 15, geom = "col") +
+  ggplot2::labs(title = NULL, x = "Importance (|z-statistic|)", y = NULL) +
+  ggplot2::theme_minimal(base_size = 11)
+```
+
+```{r fig-vip-glmnet}
+#| fig-cap: !expr paste0("LASSO (glmnet engine) variable importance: the ", nrow(lasso_coef), " predictors with non-zero coefficients at the selected penalty, for relapse prediction among CTN-0027/0030/0051 participants (2006-2016).")
+#| fig-width: 6.5
+#| fig-height: 4.5
+ggplot2::ggplot(lasso_coef,
+  ggplot2::aes(x = importance, y = reorder(term, importance))) +
+  ggplot2::geom_col(fill = "grey40") +
+  ggplot2::labs(x = "Importance (|coefficient| at selected lambda)", y = NULL) +
+  ggplot2::theme_minimal(base_size = 11)
+```
+
+```{r fig-vip-knn}
+#| fig-cap: "K-nearest-neighbors (kknn engine) permutation variable importance for relapse prediction among CTN-0027/0030/0051 participants (2006-2016): mean decrease in test ROC AUC when each predictor is shuffled (10 permutations)."
+#| fig-width: 6.5
+#| fig-height: 4.5
+vip::vip(knn_vip_obj, num_features = 15, geom = "col") +
+  ggplot2::labs(x = "Importance (mean ROC AUC decrease)", y = NULL) +
+  ggplot2::theme_minimal(base_size = 11)
+```
+
 # Discussion
 
 The feature matrix described here represents the pre-treatment behavioral and clinical profile for each randomized participant across the three CTN studies. The full feature set spans substance use, demographics, psychiatric comorbidity, pain, nicotine dependence, social risk behavior, IV drug use, withdrawal severity, medication adherence, and study site. These features will be used to train and evaluate predictive models of relapse, with the aim of informing treatment matching for OUD.
@@ -332,13 +403,23 @@ The preprocessing recipe handles two distinct classes of missingness separately:
 
 The baseline logistic regression achieved a ROC AUC of `r round(lr_metrics$.estimate[lr_metrics$.metric == "roc_auc"], 3)` on training and `r round(lr_test_metrics$.estimate[lr_test_metrics$.metric == "roc_auc"], 3)` on test — a mild to moderate drop consistent with overfitting expected from fitting an unregularized model to 100+ predictors, but still reflecting meaningful discriminative ability above chance. The large estimated associations for study membership (CTN-0030: OR ≈ 42, CTN-0027: OR ≈ 4 in the cleaned model) likely reflect between-study heterogeneity in outcome ascertainment or follow-up design rather than pre-treatment clinical effects, consistent with the challenge of pooling trials with distinct protocols.
 
+## Strengths and Weaknesses by Method
+
+**Logistic regression (glm).** *Strengths:* fully interpretable (odds ratios with confidence intervals), no tuning required, and provides an honest probabilistic baseline. *Weaknesses:* with 100+ predictors and several near-separating sparse indicators, the unpenalized fit is numerically unstable (coefficients and confidence intervals diverge), and it overfits, as seen in the train-to-test ROC AUC drop. Removing the problematic predictors restores stable estimates at essentially no cost to discrimination.
+
+**LASSO / elastic net (glmnet).** *Strengths:* built-in regularization tames the separation-prone predictors and performs automatic feature selection, yielding a sparse, deployable model from the full predictor set; the one-standard-error rule guards against overfitting. *Weaknesses:* penalized coefficients are biased toward zero (shrinkage trades a little unbiasedness for stability), the selected sparse set can be unstable across resampling folds, and standardized penalized coefficients are less directly interpretable as odds ratios than unpenalized estimates.
+
+**K-nearest neighbors (kknn).** *Strengths:* non-parametric and able to capture local, non-linear structure with a single tuning parameter; tolerates the separating predictors without coefficient blow-up. *Weaknesses:* no intrinsic variable importance (we resort to computationally expensive permutation importance), sensitive to the curse of dimensionality with 100+ standardized features, exposes no interpretable model form, and prediction cost grows linearly with the training set.
+
+Across methods, test ROC AUC is similar, indicating that the linear signal is modest and not dramatically improved by KNN's non-parametric flexibility; model choice here is therefore driven as much by interpretability and stability as by discrimination.
+
 # References {.unnumbered}
 
 ```{r make-references}
 #| include: false
 
 knitr::write_bib(
-  c(.packages(), "rUM"),
+  c(.packages(), "rUM", "glmnet", "kknn", "vip", "tidymodels"),
   "packages.bib"
 )
 ```
