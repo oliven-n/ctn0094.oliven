@@ -15,7 +15,7 @@ set.seed(12345)
 # number of folds isnt a hyperparam, and so it never affects model performance
 # and is just chosen, never tuned
 # it just affects the variance of ur performance estimate (more folds = lower var)
-folds <- vfold_cv(train_data_wopv, v = 10, strata = outcome)
+folds <- vfold_cv(train_data_wopv, v = 5, strata = outcome)
 
 # metric tweak real quick, so we dont have to do event_level = second everywhere
 #accuracy is symmetric so we dont need for it

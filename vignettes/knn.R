@@ -29,7 +29,7 @@ knn_grid <-
   data.frame(neighbors = seq(5, 50, by = 5))
 
 set.seed(12345)
-the_folds <- vfold_cv(train_data, v = 10, strata = outcome)
+the_folds <- vfold_cv(train_data, v = 5, strata = outcome)
 
 # tune_grid returns a tibble where each row is a resample x hyperparam combo,
 # with a .metrics list column

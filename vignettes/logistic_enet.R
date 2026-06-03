@@ -69,7 +69,7 @@ enet_grid <- grid_regular(
 )
 
 set.seed(12345)
-enet_folds <- vfold_cv(train_data, v = 10, strata = outcome)
+enet_folds <- vfold_cv(train_data, v = 5, strata = outcome)
 
 # parallel backend so the 5 mixtures fan out across cores
 enet_cl <- makePSOCKcluster(parallel::detectCores() - 1)
@@ -195,7 +195,7 @@ lasso_workflow <-
 lasso_grid <- grid_regular(penalty(), levels = 50)
 
 set.seed(12345)
-lasso_folds <- vfold_cv(train_data, v = 10, strata = outcome)
+lasso_folds <- vfold_cv(train_data, v = 5, strata = outcome)
 
 lasso_cl <- makePSOCKcluster(parallel::detectCores() - 1)
 registerDoParallel(lasso_cl)
