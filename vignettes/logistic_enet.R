@@ -91,6 +91,21 @@ stopCluster(enet_cl)
 enet_favorite <- select_by_one_std_err(enet_tune, desc(penalty), metric = "roc_auc")
 # this outputs a 1-row tibble of penalty, mixture, .config
 
+# CV Metrics --------
+# Divergence: tune_grid fit on 5-fold subsets of train_data (enet_folds; each fold holds
+# out 1/5 for validation). The final model below is a fresh fit on ALL train_data.
+# mean = average of the 5 fold-level roc_auc .estimates tune_grid computed internally;
+# std_err = sd of those estimates / sqrt(5); n = 5.
+# sens/spec omitted here: not available from tune_grid without save_pred=TRUE.
+enet_cv_metrics <- collect_metrics(enet_tune) |>
+  dplyr::filter(
+    .metric == "roc_auc",
+    penalty == enet_favorite$penalty,
+    mixture == enet_favorite$mixture
+  ) |>
+  dplyr::select(.metric, mean, std_err, n)
+enet_cv_metrics
+
 enet_final_wf <- finalize_workflow(enet_workflow, enet_favorite)
 
 enet_fit <- enet_final_wf |> fit(data = train_data)
@@ -126,7 +141,18 @@ enet_cut
 
 sens_spec_at(relapse_pred_enet, enet_cut)
 
-# Look at Model Metrics -----
+# Train Metrics --------
+# Divergence: enet_fit was trained on ALL of train_data (not CV folds).
+# relapse_pred_enet is in-sample prediction on the same train_data — intentionally
+# optimistic, equivalent to Balise et al.'s "Full Training Dataset" column.
+enet_train_metrics <- dplyr::bind_rows(
+  roc_auc(relapse_pred_enet, truth = outcome, .pred_1, event_level = "second"),
+  sens_spec_at(relapse_pred_enet, enet_cut)
+) |> dplyr::select(.metric, .estimate)
+enet_train_metrics
+
+# Test Metrics --------
+# Divergence: last_fit fits on training split of data_split, evaluates on test.
 # last_fit() fits the final best model to the training set and evaluates the test
 # set. Default metrics (accuracy + roc_auc) are self-consistent, so the test
 # roc_auc reads correctly without any event_level tweak — same as the template.
