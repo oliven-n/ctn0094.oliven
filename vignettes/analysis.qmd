@@ -85,14 +85,10 @@ source("knn.R")
 
 ```{r knn-save-metrics}
 #| include: false
-# knn_wopv.R overwrites relapse_pred_knn, kknn_tune, favorite — capture KNN
-# (non-wopv) train AUC and CV AUC before that happens. # added 6/2
-knn_train_auc <- yardstick::roc_auc(
-  relapse_pred_knn, truth = outcome, .pred_1, event_level = "second"
-)$.estimate
-knn_cv_auc <- tune::collect_metrics(kknn_tune) |>
-  dplyr::filter(.metric == "roc_auc", neighbors == favorite$neighbors) |>
-  dplyr::pull(mean)
+# knn_wopv.R overwrites kknn_tune / favorite / relapse_pred_knn.
+# Read scalar AUCs from the named objects knn.R exported before that overwrite. # added 6/2
+knn_train_auc <- knn_train_metrics$.estimate[knn_train_metrics$.metric == "roc_auc"]
+knn_cv_auc    <- knn_cv_metrics$mean[knn_cv_metrics$.metric == "roc_auc"]
 ```
 
 ```{r knn-wopv}
@@ -136,13 +132,9 @@ cap_fig_withdrawal <- paste0(
   sum(is.na(analysis_tibble$withdrawal_pre_score)), " excluded)."
 )
 # cap_all_metrics retired — tbl-all-metrics now uses a static inline caption
-# KNN wopv train + CV AUC (captured here since kknn_tune/favorite now = wopv versions)
-knn_wopv_train_auc <- yardstick::roc_auc(
-  relapse_pred_knn, truth = outcome, .pred_1, event_level = "second"
-)$.estimate
-knn_wopv_cv_auc <- tune::collect_metrics(kknn_tune) |>
-  dplyr::filter(.metric == "roc_auc", neighbors == favorite$neighbors) |>
-  dplyr::pull(mean)
+# Read from named objects in knn_wopv.R (kknn_tune/favorite now = wopv versions). # added 6/2
+knn_wopv_train_auc <- knn_wopv_train_metrics$.estimate[knn_wopv_train_metrics$.metric == "roc_auc"]
+knn_wopv_cv_auc    <- knn_wopv_cv_metrics$mean[knn_wopv_cv_metrics$.metric == "roc_auc"]
 
 cap_vip_glm    <- "Logistic-regression (glm engine) variable importance for predicting relapse among CTN-0027/0030/0051 participants (2006-2016), ranked by absolute z-statistic; problem variables excluded."
 cap_vip_glmnet <- paste0(
@@ -395,26 +387,22 @@ bind_cols(
 # Helper to extract ROC AUC from a .metric/.estimate tibble
 get_auc <- function(tbl) round(tbl$.estimate[tbl$.metric == "roc_auc"], 3)
 
-# CV AUC at selected hyperparameter (from tune objects)
-enet_cv_auc  <- tune::collect_metrics(enet_tune) |>
-  dplyr::filter(.metric == "roc_auc", penalty == enet_favorite$penalty,
-                mixture == enet_favorite$mixture) |> dplyr::pull(mean)
-lasso_cv_auc <- tune::collect_metrics(lasso_tune) |>
-  dplyr::filter(.metric == "roc_auc", penalty == lasso_favorite$penalty) |>
-  dplyr::pull(mean)
+# Read from named objects in logistic_enet.R. # added 6/2
+enet_cv_auc     <- enet_cv_metrics$mean[enet_cv_metrics$.metric == "roc_auc"]
+lasso_cv_auc    <- lasso_cv_metrics$mean[lasso_cv_metrics$.metric == "roc_auc"]
+enet_train_auc  <- enet_train_metrics$.estimate[enet_train_metrics$.metric == "roc_auc"]
+lasso_train_auc <- lasso_train_metrics$.estimate[lasso_train_metrics$.metric == "roc_auc"]
+enet_test_auc   <- enet_test_metrics$.estimate[enet_test_metrics$.metric == "roc_auc"]
+lasso_test_auc  <- lasso_test_metrics$.estimate[lasso_test_metrics$.metric == "roc_auc"]
 lr_cv_auc <- lr_cv_test_metrics$.estimate[lr_cv_test_metrics$.metric == "roc_auc"]
 
 # Full training AUC (in-sample, on all training data after final fit)
-enet_train_auc  <- yardstick::roc_auc(relapse_pred_enet,  truth = outcome, .pred_1, event_level = "second")$.estimate
-lasso_train_auc <- yardstick::roc_auc(relapse_pred_lasso, truth = outcome, .pred_1, event_level = "second")$.estimate
 lr_train_auc      <- get_auc(lr_metrics)
 lr_wopv_train_auc <- get_auc(lr_metrics_wopv)
 
 # Test AUC
 lr_test_auc      <- get_auc(lr_test_metrics)
 lr_wopv_test_auc <- get_auc(lr_test_metrics_wopv)
-enet_test_auc    <- round(tune::collect_metrics(enet_last_fit)$.estimate[tune::collect_metrics(enet_last_fit)$.metric == "roc_auc"], 3)
-lasso_test_auc   <- round(tune::collect_metrics(lasso_last_fit)$.estimate[tune::collect_metrics(lasso_last_fit)$.metric == "roc_auc"], 3)
 knn_test_auc     <- knn_test_metrics$.estimate[knn_test_metrics$.metric == "roc_auc"]
 knn_wopv_test_auc <- knn_wopv_test_metrics$.estimate[knn_wopv_test_metrics$.metric == "roc_auc"]
 
