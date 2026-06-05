@@ -235,6 +235,17 @@ stopCluster(lasso_cl)
 # Model Fit --------
 lasso_favorite <- select_by_one_std_err(lasso_tune, desc(penalty), metric = "roc_auc")
 
+# CV Metrics --------
+# Divergence: tune_grid fit on 5-fold subsets of train_data (lasso_folds; each fold holds
+# out 1/5 for validation). The final model below is a fresh fit on ALL train_data.
+# mean = average of the 5 fold-level roc_auc .estimates tune_grid computed internally;
+# std_err = sd of those estimates / sqrt(5); n = 5.
+# sens/spec omitted here: not available from tune_grid without save_pred=TRUE.
+lasso_cv_metrics <- collect_metrics(lasso_tune) |>
+  dplyr::filter(.metric == "roc_auc", penalty == lasso_favorite$penalty) |>
+  dplyr::select(.metric, mean, std_err, n)
+lasso_cv_metrics
+
 lasso_final_wf <- finalize_workflow(lasso_workflow, lasso_favorite)
 
 lasso_fit <- lasso_final_wf |> fit(data = train_data)
@@ -263,7 +274,18 @@ lasso_cut
 
 sens_spec_at(relapse_pred_lasso, lasso_cut)
 
-# Look at Model Metrics -----
+# Train Metrics --------
+# Divergence: lasso_fit was trained on ALL of train_data (not CV folds).
+# relapse_pred_lasso is in-sample prediction on the same train_data — intentionally
+# optimistic, equivalent to Balise et al.'s "Full Training Dataset" column.
+lasso_train_metrics <- dplyr::bind_rows(
+  roc_auc(relapse_pred_lasso, truth = outcome, .pred_1, event_level = "second"),
+  sens_spec_at(relapse_pred_lasso, lasso_cut)
+) |> dplyr::select(.metric, .estimate)
+lasso_train_metrics
+
+# Test Metrics --------
+# Divergence: last_fit fits on training split of data_split, evaluates on test.
 lasso_last_fit <- lasso_final_wf |> last_fit(data_split)
 
 collect_metrics(lasso_last_fit)
