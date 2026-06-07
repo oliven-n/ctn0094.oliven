@@ -129,6 +129,8 @@ relapse_pred_knn_test |>
 # AUC. A bigger drop = a more important predictor. # added 6/2
 library(vip)
 
+# AUC metric honoring the positive class ("1" = relapse = second level).
+# vip requires the metric fn to take arguments named `truth` and `estimate`.
 knn_auc_metric <- function(truth, estimate) {
   yardstick::roc_auc_vec(truth = truth, estimate = estimate, event_level = "second")
 }
@@ -137,7 +139,7 @@ cl <- makePSOCKcluster(parallel::detectCores() - 1)
 registerDoParallel(cl)
 set.seed(12345)
 knn_wopv_vip_obj <- vip::vi_permute(
-  object        = knn_fit,
+  object        = knn_fit,                                  # the fitted workflow
   feature_names = setdiff(names(train_data_wopv), c("who", "outcome")),
   train         = train_data_wopv,
   target        = "outcome",
