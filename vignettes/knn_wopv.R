@@ -27,10 +27,16 @@ knn_grid <-
 set.seed(12345)
 the_folds <- vfold_cv(train_data_wopv, v = 5, strata = outcome)
 
-cl <- makePSOCKcluster(parallel::detectCores() - 1)
-registerDoParallel(cl)
-kknn_tune <- tune_grid(kknn_workflow, resamples = the_folds, grid = knn_grid)
-stopCluster(cl)
+knn_wopv_tune_cache <- here::here("vignettes/knn_wopv_tune.rds")
+if (file.exists(knn_wopv_tune_cache)) {
+  kknn_tune <- readRDS(knn_wopv_tune_cache)
+} else {
+  cl <- makePSOCKcluster(parallel::detectCores() - 1)
+  registerDoParallel(cl)
+  kknn_tune <- tune_grid(kknn_workflow, resamples = the_folds, grid = knn_grid)
+  stopCluster(cl)
+  saveRDS(kknn_tune, knn_wopv_tune_cache)
+}
 
 favorite <- select_by_one_std_err(kknn_tune, neighbors, metric = "roc_auc")
 
@@ -135,25 +141,31 @@ knn_auc_metric <- function(truth, estimate) {
   yardstick::roc_auc_vec(truth = truth, estimate = estimate, event_level = "second")
 }
 
-cl <- makePSOCKcluster(parallel::detectCores() - 1)
-registerDoParallel(cl)
-set.seed(12345)
-knn_wopv_vip_obj <- vip::vi_permute(
-  object        = knn_fit,                                  # the fitted workflow
-  feature_names = setdiff(names(train_data_wopv), c("who", "outcome")),
-  train         = train_data_wopv,
-  target        = "outcome",
-  metric        = knn_auc_metric,
-  smaller_is_better = FALSE,
-  pred_wrapper  = function(object, newdata) {
-    # vip subsets newdata to feature_names, dropping the `who` ID column the
-    # recipe needs; re-add a dummy (who has role "ID", so it never affects preds).
-    if (!"who" %in% names(newdata)) newdata$who <- 1L
-    predict(object, newdata, type = "prob")$.pred_1
-  },
-  nsim = 10
-)
-stopCluster(cl)
+knn_wopv_vip_cache <- here::here("vignettes/knn_wopv_vip.rds")
+if (file.exists(knn_wopv_vip_cache)) {
+  knn_wopv_vip_obj <- readRDS(knn_wopv_vip_cache)
+} else {
+  cl <- makePSOCKcluster(parallel::detectCores() - 1)
+  registerDoParallel(cl)
+  set.seed(12345)
+  knn_wopv_vip_obj <- vip::vi_permute(
+    object        = knn_fit,                                  # the fitted workflow
+    feature_names = setdiff(names(train_data_wopv), c("who", "outcome")),
+    train         = train_data_wopv,
+    target        = "outcome",
+    metric        = knn_auc_metric,
+    smaller_is_better = FALSE,
+    pred_wrapper  = function(object, newdata) {
+      # vip subsets newdata to feature_names, dropping the `who` ID column the
+      # recipe needs; re-add a dummy (who has role "ID", so it never affects preds).
+      if (!"who" %in% names(newdata)) newdata$who <- 1L
+      predict(object, newdata, type = "prob")$.pred_1
+    },
+    nsim = 10
+  )
+  stopCluster(cl)
+  saveRDS(knn_wopv_vip_obj, knn_wopv_vip_cache)
+}
 
 vip::vip(knn_wopv_vip_obj, num_features = 15, geom = "col") +
   ggplot2::labs(

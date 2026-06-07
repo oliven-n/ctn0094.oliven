@@ -35,10 +35,16 @@ the_folds <- vfold_cv(train_data, v = 5, strata = outcome)
 
 # tune_grid returns a tibble where each row is a resample x hyperparam combo,
 # with a .metrics list column
-cl <- makePSOCKcluster(parallel::detectCores() - 1)
-registerDoParallel(cl)
-cart_tune <- tune_grid(cart_workflow, resamples = the_folds, grid = cart_grid)
-stopCluster(cl)
+cart_cache <- here::here("vignettes/cart_tune.rds")
+if (file.exists(cart_cache)) {
+  cart_tune <- readRDS(cart_cache)
+} else {
+  cl <- makePSOCKcluster(parallel::detectCores() - 1)
+  registerDoParallel(cl)
+  cart_tune <- tune_grid(cart_workflow, resamples = the_folds, grid = cart_grid)
+  stopCluster(cl)
+  saveRDS(cart_tune, cart_cache)
+}
 
 #select_by_one_std_err to avoid overfitting, desc to prefer the simpler model within 1SE
 favorite <- select_by_one_std_err(cart_tune, desc(cost_complexity), metric = "roc_auc")

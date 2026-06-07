@@ -33,10 +33,16 @@ the_folds <- vfold_cv(train_data, v = 5, strata = outcome)
 
 # tune_grid returns a tibble where each row is a resample x hyperparam combo,
 # with a .metrics list column
-cl <- makePSOCKcluster(parallel::detectCores() - 1)
-registerDoParallel(cl)
-kknn_tune <- tune_grid(kknn_workflow, resamples = the_folds, grid = knn_grid)
-stopCluster(cl)
+knn_tune_cache <- here::here("vignettes/knn_tune.rds")
+if (file.exists(knn_tune_cache)) {
+  kknn_tune <- readRDS(knn_tune_cache)
+} else {
+  cl <- makePSOCKcluster(parallel::detectCores() - 1)
+  registerDoParallel(cl)
+  kknn_tune <- tune_grid(kknn_workflow, resamples = the_folds, grid = knn_grid)
+  stopCluster(cl)
+  saveRDS(kknn_tune, knn_tune_cache)
+}
 
 # the shrinkage estiamte (selecting k)
 # more k, more shrinkage
@@ -146,25 +152,31 @@ knn_auc_metric <- function(truth, estimate) {
   yardstick::roc_auc_vec(truth = truth, estimate = estimate, event_level = "second")
 }
 
-cl <- makePSOCKcluster(parallel::detectCores() - 1)
-registerDoParallel(cl)
-set.seed(12345)
-knn_vip_obj <- vip::vi_permute(
-  object        = knn_fit,                                  # the fitted workflow
-  feature_names = setdiff(names(train_data), c("who", "outcome")),
-  train         = train_data,
-  target        = "outcome",
-  metric        = knn_auc_metric,
-  smaller_is_better = FALSE,
-  pred_wrapper  = function(object, newdata) {
-    # vip subsets newdata to feature_names, dropping the `who` ID column the
-    # recipe needs; re-add a dummy (who has role "ID", so it never affects preds).
-    if (!"who" %in% names(newdata)) newdata$who <- 1L
-    predict(object, newdata, type = "prob")$.pred_1
-  },
-  nsim = 10
-)
-stopCluster(cl)
+knn_vip_cache <- here::here("vignettes/knn_vip.rds")
+if (file.exists(knn_vip_cache)) {
+  knn_vip_obj <- readRDS(knn_vip_cache)
+} else {
+  cl <- makePSOCKcluster(parallel::detectCores() - 1)
+  registerDoParallel(cl)
+  set.seed(12345)
+  knn_vip_obj <- vip::vi_permute(
+    object        = knn_fit,                                  # the fitted workflow
+    feature_names = setdiff(names(train_data), c("who", "outcome")),
+    train         = train_data,
+    target        = "outcome",
+    metric        = knn_auc_metric,
+    smaller_is_better = FALSE,
+    pred_wrapper  = function(object, newdata) {
+      # vip subsets newdata to feature_names, dropping the `who` ID column the
+      # recipe needs; re-add a dummy (who has role "ID", so it never affects preds).
+      if (!"who" %in% names(newdata)) newdata$who <- 1L
+      predict(object, newdata, type = "prob")$.pred_1
+    },
+    nsim = 10
+  )
+  stopCluster(cl)
+  saveRDS(knn_vip_obj, knn_vip_cache)
+}
 
 # VIP plot (top 15), enriched with title/axis/description. # added 6/2
 vip::vip(knn_vip_obj, num_features = 15, geom = "col") +

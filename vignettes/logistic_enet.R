@@ -72,14 +72,20 @@ set.seed(12345)
 enet_folds <- vfold_cv(train_data, v = 5, strata = outcome)
 
 # parallel backend so the 5 mixtures fan out across cores
-enet_cl <- makePSOCKcluster(parallel::detectCores() - 1)
-registerDoParallel(enet_cl)
-enet_tune <- tune_grid(
-  enet_workflow,
-  resamples = enet_folds,
-  grid      = enet_grid
-)
-stopCluster(enet_cl)
+enet_cache <- here::here("vignettes/enet_tune.rds")
+if (file.exists(enet_cache)) {
+  enet_tune <- readRDS(enet_cache)
+} else {
+  enet_cl <- makePSOCKcluster(parallel::detectCores() - 1)
+  registerDoParallel(enet_cl)
+  enet_tune <- tune_grid(
+    enet_workflow,
+    resamples = enet_folds,
+    grid      = enet_grid
+  )
+  stopCluster(enet_cl)
+  saveRDS(enet_tune, enet_cache)
+}
 
 # select_by_one_std_err = the classic "lambda.1se" rule: take the SIMPLEST model
 # whose performance is within one standard error of the best. desc(penalty) tells
@@ -223,14 +229,20 @@ lasso_grid <- grid_regular(penalty(), levels = 50)
 set.seed(12345)
 lasso_folds <- vfold_cv(train_data, v = 5, strata = outcome)
 
-lasso_cl <- makePSOCKcluster(parallel::detectCores() - 1)
-registerDoParallel(lasso_cl)
-lasso_tune <- tune_grid(
-  lasso_workflow,
-  resamples = lasso_folds,
-  grid      = lasso_grid
-)
-stopCluster(lasso_cl)
+lasso_cache <- here::here("vignettes/lasso_tune.rds")
+if (file.exists(lasso_cache)) {
+  lasso_tune <- readRDS(lasso_cache)
+} else {
+  lasso_cl <- makePSOCKcluster(parallel::detectCores() - 1)
+  registerDoParallel(lasso_cl)
+  lasso_tune <- tune_grid(
+    lasso_workflow,
+    resamples = lasso_folds,
+    grid      = lasso_grid
+  )
+  stopCluster(lasso_cl)
+  saveRDS(lasso_tune, lasso_cache)
+}
 
 # select_by_one_std_err = the classic "lambda.1se" rule: take the SIMPLEST model
 # whose performance is within one standard error of the best. desc(penalty) tells
