@@ -36,6 +36,10 @@ stopCluster(cl)
 # Model Fit --------
 favorite <- select_by_one_std_err(kknn_tune, neighbors, metric = "roc_auc")
 
+final_wf <- finalize_workflow(kknn_workflow, favorite)
+
+knn_fit <- final_wf |> fit(data = train_data_wopv)
+
 # CV Metrics --------
 # Divergence: tune_grid fit on 5-fold subsets of train_data_wopv (each fold holds out
 # 1/5 for validation). The final model below is a fresh fit on ALL train_data_wopv.
@@ -46,10 +50,6 @@ knn_wopv_cv_metrics <- collect_metrics(kknn_tune) |>
   dplyr::filter(.metric == "roc_auc", neighbors == favorite$neighbors) |>
   dplyr::select(.metric, mean, std_err, n)
 knn_wopv_cv_metrics
-
-final_wf <- finalize_workflow(kknn_workflow, favorite)
-
-knn_fit <- final_wf |> fit(data = train_data_wopv)
 
 # Review Fit on Training Data-----
 relapse_pred_knn <-

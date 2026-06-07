@@ -91,6 +91,10 @@ stopCluster(enet_cl)
 enet_favorite <- select_by_one_std_err(enet_tune, desc(penalty), metric = "roc_auc")
 # this outputs a 1-row tibble of penalty, mixture, .config
 
+enet_final_wf <- finalize_workflow(enet_workflow, enet_favorite)
+
+enet_fit <- enet_final_wf |> fit(data = train_data)
+
 # CV Metrics --------
 # Divergence: tune_grid fit on 5-fold subsets of train_data (enet_folds; each fold holds
 # out 1/5 for validation). The final model below is a fresh fit on ALL train_data.
@@ -105,10 +109,6 @@ enet_cv_metrics <- collect_metrics(enet_tune) |>
   ) |>
   dplyr::select(.metric, mean, std_err, n)
 enet_cv_metrics
-
-enet_final_wf <- finalize_workflow(enet_workflow, enet_favorite)
-
-enet_fit <- enet_final_wf |> fit(data = train_data)
 
 # Review Fit on Training Data-----
 relapse_pred_enet <-
@@ -235,6 +235,10 @@ stopCluster(lasso_cl)
 # Model Fit --------
 lasso_favorite <- select_by_one_std_err(lasso_tune, desc(penalty), metric = "roc_auc")
 
+lasso_final_wf <- finalize_workflow(lasso_workflow, lasso_favorite)
+
+lasso_fit <- lasso_final_wf |> fit(data = train_data)
+
 # CV Metrics --------
 # Divergence: tune_grid fit on 5-fold subsets of train_data (lasso_folds; each fold holds
 # out 1/5 for validation). The final model below is a fresh fit on ALL train_data.
@@ -245,10 +249,6 @@ lasso_cv_metrics <- collect_metrics(lasso_tune) |>
   dplyr::filter(.metric == "roc_auc", penalty == lasso_favorite$penalty) |>
   dplyr::select(.metric, mean, std_err, n)
 lasso_cv_metrics
-
-lasso_final_wf <- finalize_workflow(lasso_workflow, lasso_favorite)
-
-lasso_fit <- lasso_final_wf |> fit(data = train_data)
 
 # Review Fit on Training Data-----
 relapse_pred_lasso <-
