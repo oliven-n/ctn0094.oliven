@@ -12,6 +12,7 @@ Suggests:
     conflicted,
     CTNote,
     dplyr,
+    ggplot2,
     glue,
     gtsummary (>= 2.0.3),
     here,

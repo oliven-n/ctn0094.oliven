@@ -3,7 +3,7 @@
 # K-fold cross-validated logistic regression using the without-problem-variables
 # recipe. Sourced by analysis.qmd after logistic_regression_without_problem_vars.R.
 library(doParallel)
-cl <- makePSOCKcluster(parallel::detectCores() - 1)
+cl <- makePSOCKcluster((if (nzchar(Sys.getenv("_R_CHECK_LIMIT_CORES_"))) 2L else max(1L, parallel::detectCores() - 1L)))
 registerDoParallel(cl)
 
 if (!exists("lr_workflow_wopv")) {

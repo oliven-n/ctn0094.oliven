@@ -39,7 +39,7 @@ cart_cache <- here::here("vignettes/cart_tune.rds")
 if (file.exists(cart_cache)) {
   cart_tune <- readRDS(cart_cache)
 } else {
-  cl <- makePSOCKcluster(parallel::detectCores() - 1)
+  cl <- makePSOCKcluster((if (nzchar(Sys.getenv("_R_CHECK_LIMIT_CORES_"))) 2L else max(1L, parallel::detectCores() - 1L)))
   registerDoParallel(cl)
   cart_tune <- tune_grid(cart_workflow, resamples = the_folds, grid = cart_grid)
   stopCluster(cl)

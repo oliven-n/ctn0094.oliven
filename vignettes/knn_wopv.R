@@ -31,7 +31,7 @@ knn_wopv_tune_cache <- here::here("vignettes/knn_wopv_tune.rds")
 if (file.exists(knn_wopv_tune_cache)) {
   kknn_tune <- readRDS(knn_wopv_tune_cache)
 } else {
-  cl <- makePSOCKcluster(parallel::detectCores() - 1)
+  cl <- makePSOCKcluster((if (nzchar(Sys.getenv("_R_CHECK_LIMIT_CORES_"))) 2L else max(1L, parallel::detectCores() - 1L)))
   registerDoParallel(cl)
   kknn_tune <- tune_grid(kknn_workflow, resamples = the_folds, grid = knn_grid)
   stopCluster(cl)
@@ -145,7 +145,7 @@ knn_wopv_vip_cache <- here::here("vignettes/knn_wopv_vip.rds")
 if (file.exists(knn_wopv_vip_cache)) {
   knn_wopv_vip_obj <- readRDS(knn_wopv_vip_cache)
 } else {
-  cl <- makePSOCKcluster(parallel::detectCores() - 1)
+  cl <- makePSOCKcluster((if (nzchar(Sys.getenv("_R_CHECK_LIMIT_CORES_"))) 2L else max(1L, parallel::detectCores() - 1L)))
   registerDoParallel(cl)
   set.seed(12345)
   knn_wopv_vip_obj <- vip::vi_permute(

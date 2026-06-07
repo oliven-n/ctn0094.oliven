@@ -6,3 +6,6 @@ dated_progress_notes.md
 inst/.gitkeep
 ^docs$
 \.zip$
+^vignettes/analysis_cache$
+^Rplots\.pdf$
+^data-raw$

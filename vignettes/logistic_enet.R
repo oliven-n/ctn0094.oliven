@@ -76,7 +76,7 @@ enet_cache <- here::here("vignettes/enet_tune.rds")
 if (file.exists(enet_cache)) {
   enet_tune <- readRDS(enet_cache)
 } else {
-  enet_cl <- makePSOCKcluster(parallel::detectCores() - 1)
+  enet_cl <- makePSOCKcluster((if (nzchar(Sys.getenv("_R_CHECK_LIMIT_CORES_"))) 2L else max(1L, parallel::detectCores() - 1L)))
   registerDoParallel(enet_cl)
   enet_tune <- tune_grid(
     enet_workflow,
@@ -233,7 +233,7 @@ lasso_cache <- here::here("vignettes/lasso_tune.rds")
 if (file.exists(lasso_cache)) {
   lasso_tune <- readRDS(lasso_cache)
 } else {
-  lasso_cl <- makePSOCKcluster(parallel::detectCores() - 1)
+  lasso_cl <- makePSOCKcluster((if (nzchar(Sys.getenv("_R_CHECK_LIMIT_CORES_"))) 2L else max(1L, parallel::detectCores() - 1L)))
   registerDoParallel(lasso_cl)
   lasso_tune <- tune_grid(
     lasso_workflow,

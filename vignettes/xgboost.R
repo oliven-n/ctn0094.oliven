@@ -65,7 +65,7 @@ xgboost_cache <- here::here("vignettes/xgboost_tune.rds")
 if (file.exists(xgboost_cache)) {
   xgboost_tune <- readRDS(xgboost_cache)
 } else {
-  cl <- makePSOCKcluster(parallel::detectCores() - 1)
+  cl <- makePSOCKcluster((if (nzchar(Sys.getenv("_R_CHECK_LIMIT_CORES_"))) 2L else max(1L, parallel::detectCores() - 1L)))
   registerDoParallel(cl)
   xgboost_tune <- tune_grid(
     xgboost_workflow,

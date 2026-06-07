@@ -62,7 +62,7 @@ randfor_cache <- here::here("vignettes/randfor_tune.rds")
 if (file.exists(randfor_cache)) {
   randfor_tune <- readRDS(randfor_cache)
 } else {
-  cl <- makePSOCKcluster(parallel::detectCores() - 1)
+  cl <- makePSOCKcluster((if (nzchar(Sys.getenv("_R_CHECK_LIMIT_CORES_"))) 2L else max(1L, parallel::detectCores() - 1L)))
   registerDoParallel(cl)
   randfor_tune <- tune_grid(randfor_workflow, resamples = the_folds, grid = randfor_grid)
   stopCluster(cl)
