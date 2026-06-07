@@ -61,10 +61,25 @@ knn_cv_metrics <- collect_metrics(kknn_tune) |>
   dplyr::select(.metric, mean, std_err, n)
 knn_cv_metrics
 
-# Review Fit on Training Data-----
+# Train Metrics --------
+# Divergence: knn_fit was trained on ALL of train_data (not CV folds).
+# relapse_pred_knn is in-sample prediction on the same train_data — intentionally
+# optimistic, equivalent to Balise et al.'s "Full Training Dataset" column.
 relapse_pred_knn <-
   predict(knn_fit, train_data, type = "prob") |>
   bind_cols(train_data |> select(outcome))
+
+knn_cut <- youden_cutoff(relapse_pred_knn)
+knn_cut
+
+knn_train_metrics <- dplyr::bind_rows(
+  roc_auc(relapse_pred_knn, truth = outcome, .pred_1, event_level = "second"),
+  sens_spec_at(relapse_pred_knn, knn_cut)
+) |> dplyr::select(.metric, .estimate)
+knn_train_metrics
+
+# Review Fit on Training Data --------
+# Visualization of in-sample fit. relapse_pred_knn and knn_cut defined above.
 
 # ROC/AUC Plot (train) — enriched with title/labels. # enriched 6/2
 relapse_pred_knn |>
@@ -84,23 +99,6 @@ relapse_pred_knn |>
     event_level = "second"
   )
 
-# Sensitivity & Specificity at the Youden-J cutoff (chosen on TRAIN, not 0.5),
-# matching logistic_enet.R so analysis.qmd reports a consistent operating point.
-knn_cut <- youden_cutoff(relapse_pred_knn)
-knn_cut
-
-sens_spec_at(relapse_pred_knn, knn_cut)
-
-# Train Metrics --------
-# Divergence: knn_fit was trained on ALL of train_data (not CV folds).
-# relapse_pred_knn is in-sample prediction on the same train_data — intentionally
-# optimistic, equivalent to Balise et al.'s "Full Training Dataset" column.
-knn_train_metrics <- dplyr::bind_rows(
-  roc_auc(relapse_pred_knn, truth = outcome, .pred_1, event_level = "second"),
-  sens_spec_at(relapse_pred_knn, knn_cut)
-) |> dplyr::select(.metric, .estimate)
-knn_train_metrics
-
 # Test Metrics --------
 # Divergence: last_fit fits on the training split of data_split, evaluates on
 # the held-out 25% test split. Youden-J cutoff chosen on train_data, applied here.
@@ -118,6 +116,23 @@ sens_spec_at(collect_predictions(knn_last_fit), knn_cut)
 knn_test_metrics <- test_metrics_from_lastfit(
   knn_last_fit, knn_cut, "KNN"
 )
+
+# Review Fit on Test Data --------
+# collect_predictions(knn_last_fit) reuses the test-split predictions already
+# computed inside last_fit() above — identical to predict(knn_fit, test_data)
+# but avoids a redundant prediction call and keeps this plot consistent with the
+# scalar metrics derived from the same last_fit object.
+relapse_pred_knn_test <- collect_predictions(knn_last_fit)
+
+# enriched 6/2
+relapse_pred_knn_test |>
+  roc_curve(truth = outcome, .pred_1, event_level = "second") |>
+  autoplot() +
+  ggplot2::labs(
+    title    = "KNN: test ROC curve",
+    subtitle = "Held-out 25% test split; relapse as the positive class",
+    x = "1 - Specificity", y = "Sensitivity"
+  )
 
 # Look at Variable Importance ------
 # KNN has no intrinsic coefficients, so we use model-agnostic PERMUTATION
@@ -160,20 +175,4 @@ vip::vip(knn_vip_obj, num_features = 15, geom = "col") +
     y        = NULL
   ) +
   ggplot2::theme_minimal(base_size = 11)
-
-# collect_predictions(knn_last_fit) reuses the test-split predictions already
-# computed inside last_fit() above — identical to predict(knn_fit, test_data)
-# but avoids a redundant prediction call and keeps this plot consistent with the
-# scalar metrics derived from the same last_fit object.
-relapse_pred_knn_test <- collect_predictions(knn_last_fit)
-
-# enriched 6/2
-relapse_pred_knn_test |>
-  roc_curve(truth = outcome, .pred_1, event_level = "second") |>
-  autoplot() +
-  ggplot2::labs(
-    title    = "KNN: test ROC curve",
-    subtitle = "Held-out 25% test split; relapse as the positive class",
-    x = "1 - Specificity", y = "Sensitivity"
-  )
 
