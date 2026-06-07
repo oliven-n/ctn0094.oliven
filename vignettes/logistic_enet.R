@@ -232,7 +232,12 @@ lasso_tune <- tune_grid(
 )
 stopCluster(lasso_cl)
 
+# select_by_one_std_err = the classic "lambda.1se" rule: take the SIMPLEST model
+# whose performance is within one standard error of the best. desc(penalty) tells
+# it that higher penalty = simpler (more shrinkage), so it leans toward sparser
+# models on purpose — fewer surviving coefficients, less overfitting.
 lasso_favorite <- select_by_one_std_err(lasso_tune, desc(penalty), metric = "roc_auc")
+# this outputs a 1-row tibble of penalty, .config
 
 # Model Fit --------
 lasso_final_wf <- finalize_workflow(lasso_workflow, lasso_favorite)
