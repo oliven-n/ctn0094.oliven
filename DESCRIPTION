@@ -32,7 +32,9 @@ Suggests:
     kknn,
     vip,
     xfun,
-    rpart.plot
+    rpart.plot,
+    ranger,
+    xgboost
 VignetteBuilder: quarto
 Depends: 
     R (>= 3.5)
