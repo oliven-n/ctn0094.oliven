@@ -105,6 +105,13 @@ source("knn_wopv.R")
 source("logistic_enet.R")
 ```
 
+```{r cart}
+#| include: false
+#| cache: true
+#| cache-extra: !expr digest::digest(readLines("cart.R"))
+source("cart.R")
+```
+
 ```{r precompute-captions}
 #| include: false
 # Pre-compute captions that contain inline R calculations (commas inside
@@ -143,6 +150,7 @@ cap_vip_glmnet <- paste0(
   " for relapse prediction among CTN-0027/0030/0051 participants (2006-2016)."
 )
 cap_vip_knn    <- "K-nearest-neighbors (kknn engine) permutation variable importance for relapse prediction among CTN-0027/0030/0051 participants (2006-2016): mean decrease in test ROC AUC when each predictor is shuffled (10 permutations)."
+cap_vip_cart   <- "CART (rpart engine) variable importance for relapse prediction among CTN-0027/0030/0051 participants (2006-2016): native impurity-based importance, measured as the mean decrease in node impurity weighted by the number of training samples reaching each split."
 ```
 
 # Abstract
