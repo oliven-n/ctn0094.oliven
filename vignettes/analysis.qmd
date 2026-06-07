@@ -402,6 +402,10 @@ enet_train_auc  <- enet_train_metrics$.estimate[enet_train_metrics$.metric == "r
 lasso_train_auc <- lasso_train_metrics$.estimate[lasso_train_metrics$.metric == "roc_auc"]
 enet_test_auc   <- enet_test_metrics$.estimate[enet_test_metrics$.metric == "roc_auc"]
 lasso_test_auc  <- lasso_test_metrics$.estimate[lasso_test_metrics$.metric == "roc_auc"]
+# Read from named objects in cart.R.
+cart_cv_auc    <- cart_cv_metrics$mean[cart_cv_metrics$.metric == "roc_auc"]
+cart_train_auc <- cart_train_metrics$.estimate[cart_train_metrics$.metric == "roc_auc"]
+cart_test_auc  <- cart_test_metrics$.estimate[cart_test_metrics$.metric == "roc_auc"]
 lr_cv_auc <- lr_cv_test_metrics$.estimate[lr_cv_test_metrics$.metric == "roc_auc"]
 
 # Full training AUC (in-sample, on all training data after final fit)
@@ -422,7 +426,8 @@ tibble::tribble(
   "Elastic net (mixture = 0.25)",  round(enet_cv_auc, 3),      round(enet_train_auc, 3),  enet_test_auc,
   "LASSO",                         round(lasso_cv_auc, 3),     round(lasso_train_auc, 3), lasso_test_auc,
   "KNN",                           round(knn_cv_auc, 3),       round(knn_train_auc, 3),   knn_test_auc,
-  "KNN (no problem vars)",         round(knn_wopv_cv_auc, 3),  round(knn_wopv_train_auc, 3), knn_wopv_test_auc
+  "KNN (no problem vars)",         round(knn_wopv_cv_auc, 3),  round(knn_wopv_train_auc, 3), knn_wopv_test_auc,
+  "CART",                          round(cart_cv_auc, 3),      round(cart_train_auc, 3),     cart_test_auc
 ) |>
   kable(
     digits    = 3,
