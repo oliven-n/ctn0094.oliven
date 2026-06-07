@@ -12,9 +12,12 @@ xgboost_recipe <- lr_recipe
 
 xgboost_spec <-
   boost_tree(
-    trees      = 1000,
-    learn_rate = tune(),
-    tree_depth = tune()
+    trees          = 1000,
+    learn_rate     = tune(),
+    tree_depth     = tune(),
+    loss_reduction = tune(),
+    mtry           = tune(),   # colsample_bytree: fraction of predictors per tree
+    sample_size    = tune()    # subsample: fraction of training rows per tree
   ) |>
   set_engine('xgboost') |>
   set_mode('classification')
@@ -26,19 +29,29 @@ xgboost_workflow <-
   add_model(xgboost_spec)
 
 # Hyperparameter Tuning-----
-# Tuning learn_rate (shrinkage per boosting round) and tree_depth (max depth
-# per tree). trees is fixed at 1000: XGBoost is more sensitive to learn_rate
-# and tree_depth than total rounds; fixing gives a 3x3 = 9-combo grid.
+# Tuning 5 parameters; trees fixed at 1000 (fixing avoids a 6th dimension and
+# 1000 rounds at a small learn_rate is a solid conservative default).
+# With 5 params, grid_regular explodes (3^5 = 243 combos); use a Latin hypercube
+# instead — space-filling design that covers the hyperparameter volume in ~30 runs.
 #
-# learn_rate range set to c(-3, -1): dials default c(-10, -1) in log10 space
-# puts one gridpoint at 10^-10 — essentially zero learning, wastes a slot.
-# c(-3, -1) gives rates 0.001, 0.01, 0.1 — all practically meaningful.
-xgboost_grid <-
-  grid_regular(
-    learn_rate(range = c(-3, -1)),
-    tree_depth(),
-    levels = 3
-  )
+# Initial range reasoning:
+#   learn_rate    small  c(-3, -1): 0.001–0.1 — slow shrinkage, less overfit
+#   tree_depth    low    c(1, 5):   shallow trees, controls per-tree complexity
+#   loss_reduction high  c(0, 2):   log10 scale → gamma 1–100; requires splits
+#                                   to earn their keep (conservative pruning)
+#   mtry          —      c(0.3,0.9): colsample_bytree proportion (30–90% of cols)
+#   sample_size   —      c(0.5,0.9): subsample proportion (50–90% of rows/tree)
+#
+# After tuning, run the console diagnostic plot (see repo notes) to assess
+# whether any axis needs widening/tightening before the final grid.
+xgboost_grid <- grid_latin_hypercube(
+  learn_rate(range     = c(-3, -1)),
+  tree_depth(range     = c(1L, 5L)),
+  loss_reduction(range = c(0, 2)),
+  mtry_prop(range      = c(0.3, 0.9)),
+  sample_prop(range    = c(0.5, 0.9)),
+  size = 30
+)
 
 set.seed(12345)
 the_folds <- vfold_cv(train_data, v = 5, strata = outcome)
@@ -55,7 +68,7 @@ stopCluster(cl)
 # shallower tree_depth constrains complexity — these pull in different directions
 # with no canonical regularization ordering like CART's single cost_complexity.
 xgboost_favorite <- select_best(xgboost_tune, metric = "roc_auc")
-# this outputs a 1-row tibble of learn_rate, tree_depth, .config
+# this outputs a 1-row tibble of learn_rate, tree_depth, loss_reduction, mtry, sample_size, .config
 
 show_best(xgboost_tune, metric = "roc_auc")
 autoplot(xgboost_tune)
@@ -75,9 +88,12 @@ xgboost_fit <- xgboost_final_wf |> fit(data = train_data)
 # sens/spec omitted here: not available from tune_grid without save_pred=TRUE.
 xgboost_cv_metrics <- collect_metrics(xgboost_tune) |>
   dplyr::filter(
-    .metric    == "roc_auc",
-    learn_rate == xgboost_favorite$learn_rate,
-    tree_depth == xgboost_favorite$tree_depth
+    .metric        == "roc_auc",
+    learn_rate     == xgboost_favorite$learn_rate,
+    tree_depth     == xgboost_favorite$tree_depth,
+    loss_reduction == xgboost_favorite$loss_reduction,
+    mtry           == xgboost_favorite$mtry,
+    sample_size    == xgboost_favorite$sample_size
   ) |>
   dplyr::select(.metric, mean, std_err, n)
 xgboost_cv_metrics
