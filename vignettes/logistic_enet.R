@@ -298,9 +298,11 @@ relapse_pred_lasso |>
 # roc_auc reads correctly without any event_level tweak — same as the template.
 lasso_last_fit <- lasso_final_wf |> last_fit(data_split)
 
+# accuracy and roc_auc on the held-out test set
 collect_metrics(lasso_last_fit)
 
-# Test sens + spec at the SAME train-chosen cutoff (choose on train, report on test)
+# Test sens + spec at the SAME train-chosen cutoff (choose on train, report on
+# test — never tuned on test). spec is the clinically important one here.
 sens_spec_at(collect_predictions(lasso_last_fit), lasso_cut)
 
 # Named metric tibble for the cross-method comparison table in analysis.qmd. # added 6/2
