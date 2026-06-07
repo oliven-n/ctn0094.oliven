@@ -9,11 +9,11 @@
 This is an analysis that predicts treatment response for people undergoing care for Opioid Use Disorder (OUD).
 }
 \author{
-\strong{Maintainer}: Nat Oliven \email{oliven@umich.edu} (\href{https://orcid.org/fill_in}{ORCID})
+\strong{Maintainer}: Nat Oliven \email{oliven@umich.edu} (\href{https://orcid.org/0009-0005-2359-319X}{ORCID})
 
 Authors:
 \itemize{
-  \item Nat Oliven \email{oliven@umich.edu} (\href{https://orcid.org/fill_in}{ORCID})
+  \item Nat Oliven \email{oliven@umich.edu} (\href{https://orcid.org/0009-0005-2359-319X}{ORCID})
 }
 
 }
