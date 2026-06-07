@@ -50,10 +50,25 @@ knn_wopv_cv_metrics <- collect_metrics(kknn_tune) |>
   dplyr::select(.metric, mean, std_err, n)
 knn_wopv_cv_metrics
 
-# Review Fit on Training Data-----
+# Train Metrics --------
+# Divergence: knn_fit was trained on ALL of train_data_wopv (not CV folds).
+# relapse_pred_knn is in-sample prediction on the same train_data_wopv — intentionally
+# optimistic, equivalent to Balise et al.'s "Full Training Dataset" column.
 relapse_pred_knn <-
   predict(knn_fit, train_data_wopv, type = "prob") |>
   bind_cols(train_data_wopv |> select(outcome))
+
+knn_cut <- youden_cutoff(relapse_pred_knn)
+knn_cut
+
+knn_wopv_train_metrics <- dplyr::bind_rows(
+  roc_auc(relapse_pred_knn, truth = outcome, .pred_1, event_level = "second"),
+  sens_spec_at(relapse_pred_knn, knn_cut)
+) |> dplyr::select(.metric, .estimate)
+knn_wopv_train_metrics
+
+# Review Fit on Training Data --------
+# Visualization of in-sample fit. relapse_pred_knn and knn_cut defined above.
 
 # ROC/AUC Plot (train) — enriched with title/labels. # enriched 6/2
 relapse_pred_knn |>
@@ -73,25 +88,11 @@ relapse_pred_knn |>
     event_level = "second"
   )
 
-# Sensitivity & Specificity at the Youden-J cutoff (chosen on TRAIN, not 0.5),
-# matching logistic_enet.R so analysis.qmd reports a consistent operating point.
-knn_cut <- youden_cutoff(relapse_pred_knn)
-knn_cut
-
-sens_spec_at(relapse_pred_knn, knn_cut)
-
-# Train Metrics --------
-# Divergence: knn_fit was trained on ALL of train_data_wopv (not CV folds).
-# relapse_pred_knn is in-sample prediction on the same train_data_wopv — intentionally
-# optimistic, equivalent to Balise et al.'s "Full Training Dataset" column.
-knn_wopv_train_metrics <- dplyr::bind_rows(
-  roc_auc(relapse_pred_knn, truth = outcome, .pred_1, event_level = "second"),
-  sens_spec_at(relapse_pred_knn, knn_cut)
-) |> dplyr::select(.metric, .estimate)
-knn_wopv_train_metrics
-
 # Test Metrics --------
-# Divergence: last_fit fits on training split of data_split_wopv, evaluates on test.
+# Divergence: last_fit fits on the training split of data_split_wopv, evaluates on
+# the held-out 25% test split. Youden-J cutoff chosen on train_data_wopv, applied here.
+
+# last_fit() fits the final best model to the training set and evaluates the test set
 knn_last_fit <- final_wf |> last_fit(data_split_wopv)
 
 # accuracy and roc_auc on test set (tidymodels defaults)
@@ -105,6 +106,7 @@ knn_wopv_test_metrics <- test_metrics_from_lastfit(
   knn_last_fit, knn_cut, "KNN (no problem vars)"
 )
 
+# Review Fit on Test Data --------
 # collect_predictions(knn_last_fit) reuses the test-split predictions already
 # computed inside last_fit() above — identical to predict(knn_fit, test_data_wopv)
 # but avoids a redundant prediction call and keeps this plot consistent with the
