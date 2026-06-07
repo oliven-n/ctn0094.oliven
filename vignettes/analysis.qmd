@@ -205,9 +205,9 @@ Penalized logistic regression was fitted with the `glmnet` engine. Two specifica
 
 K-nearest-neighbors classification was fitted with the `kknn` engine on the standardized predictor matrix (normalization is essential, since KNN uses Euclidean distance). The number of neighbors was tuned over $k = 5, 10, \ldots, 50$ by 5-fold cross-validation optimizing ROC AUC, with the neighbor count chosen by the one-standard-error rule. KNN was run on the full predictor set (including the separation-prone variables): unlike unpenalized logistic regression it has no coefficients to diverge, so it tolerates those predictors directly.
 
-### Planned Tree-Based Models (Future Work)
+### Classification and Regression Tree (CART)
 
-Classification and regression trees (`rpart`), random forests (`ranger`), and gradient-boosted trees (`xgboost`) are planned extensions. They are not yet implemented and are excluded from the results below, which cover the logistic, penalized-logistic, and KNN models.
+A single decision tree was fitted with the `rpart` engine using the same shared preprocessing recipe as the other models. The tree is grown by recursive binary splitting, using the Gini impurity criterion. The cost-complexity pruning parameter ($\alpha$, `cost_complexity`) controls tree depth: larger $\alpha$ prunes more aggressively, yielding a shallower, simpler tree. Ten candidate values of `cost_complexity` were evaluated on a log-spaced grid from $10^{-10}$ to $10^{-1}$ using 5-fold cross-validation, optimizing ROC AUC. The final pruning parameter was selected by the one-standard-error rule (`select_by_one_std_err` with `desc(cost_complexity)`), which prefers the most aggressively pruned tree whose CV ROC AUC is within one standard error of the best — guarding against overfit. Variable importance is the native impurity-based measure: the mean decrease in node impurity (Gini) attributable to each predictor, weighted by the number of training samples that pass through each split.
 
 ## Software
 
@@ -467,6 +467,15 @@ ggplot2::ggplot(lasso_coef,
 #| fig-height: 4.5
 vip::vip(knn_vip_obj, num_features = 15, geom = "col") +
   ggplot2::labs(x = "Importance (mean ROC AUC decrease)", y = NULL) +
+  ggplot2::theme_minimal(base_size = 11)
+```
+
+```{r fig-vip-cart}
+#| fig-cap: !expr cap_vip_cart
+#| fig-width: 6.5
+#| fig-height: 4.5
+vip::vip(cart_fit, num_features = 20) +
+  ggplot2::labs(x = "Importance (mean node impurity decrease)", y = NULL) +
   ggplot2::theme_minimal(base_size = 11)
 ```
 
