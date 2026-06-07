@@ -474,7 +474,7 @@ vip::vip(knn_vip_obj, num_features = 15, geom = "col") +
 #| fig-cap: !expr cap_vip_cart
 #| fig-width: 6.5
 #| fig-height: 4.5
-vip::vip(cart_fit, num_features = 20) +
+vip::vip(cart_fit, num_features = 15, geom = "col") +
   ggplot2::labs(x = "Importance (mean node impurity decrease)", y = NULL) +
   ggplot2::theme_minimal(base_size = 11)
 ```
