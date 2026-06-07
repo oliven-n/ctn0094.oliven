@@ -250,10 +250,26 @@ lasso_cv_metrics <- collect_metrics(lasso_tune) |>
   dplyr::select(.metric, mean, std_err, n)
 lasso_cv_metrics
 
-# Review Fit on Training Data-----
+# Train Metrics --------
+# Divergence: lasso_fit was trained on ALL of train_data (not CV folds).
+# relapse_pred_lasso is in-sample prediction on the same train_data — intentionally
+# optimistic, equivalent to Balise et al.'s "Full Training Dataset" column.
 relapse_pred_lasso <-
   predict(lasso_fit, train_data, type = "prob") |>
   bind_cols(train_data |> select(outcome))
+
+# Sensitivity & Specificity at the Youden-J cutoff (chosen on TRAIN, not 0.5)
+lasso_cut <- youden_cutoff(relapse_pred_lasso)
+lasso_cut
+
+lasso_train_metrics <- dplyr::bind_rows(
+  roc_auc(relapse_pred_lasso, truth = outcome, .pred_1, event_level = "second"),
+  sens_spec_at(relapse_pred_lasso, lasso_cut)
+) |> dplyr::select(.metric, .estimate)
+lasso_train_metrics
+
+# Review Fit on Training Data --------
+# Visualization of in-sample fit. relapse_pred_lasso and lasso_cut defined above.
 
 # ROC/AUC Plot (train) — enriched with title/labels. # enriched 6/2
 relapse_pred_lasso |>
@@ -268,22 +284,6 @@ relapse_pred_lasso |>
 relapse_pred_lasso |>
   roc_auc(truth = outcome, .pred_1, event_level = "second")
 
-# Sensitivity & Specificity at the Youden-J cutoff (chosen on TRAIN, not 0.5)
-lasso_cut <- youden_cutoff(relapse_pred_lasso)
-lasso_cut
-
-sens_spec_at(relapse_pred_lasso, lasso_cut)
-
-# Train Metrics --------
-# Divergence: lasso_fit was trained on ALL of train_data (not CV folds).
-# relapse_pred_lasso is in-sample prediction on the same train_data — intentionally
-# optimistic, equivalent to Balise et al.'s "Full Training Dataset" column.
-lasso_train_metrics <- dplyr::bind_rows(
-  roc_auc(relapse_pred_lasso, truth = outcome, .pred_1, event_level = "second"),
-  sens_spec_at(relapse_pred_lasso, lasso_cut)
-) |> dplyr::select(.metric, .estimate)
-lasso_train_metrics
-
 # Test Metrics --------
 # Divergence: last_fit fits on training split of data_split, evaluates on test.
 lasso_last_fit <- lasso_final_wf |> last_fit(data_split)
@@ -297,6 +297,23 @@ sens_spec_at(collect_predictions(lasso_last_fit), lasso_cut)
 lasso_test_metrics <- test_metrics_from_lastfit(
   lasso_last_fit, lasso_cut, "LASSO"
 )
+
+# Review Fit on Test Data --------
+# collect_predictions(lasso_last_fit) reuses the test-split predictions already
+# computed inside last_fit() above — identical to predict(lasso_fit, test_data)
+# but avoids a redundant prediction call and keeps this plot consistent with the
+# scalar metrics derived from the same last_fit object.
+relapse_pred_lasso_test <- collect_predictions(lasso_last_fit)
+
+# enriched 6/2
+relapse_pred_lasso_test |>
+  roc_curve(truth = outcome, .pred_1, event_level = "second") |>
+  autoplot() +
+  ggplot2::labs(
+    title    = "Pure LASSO: test ROC curve",
+    subtitle = "Held-out 25% test split; relapse as the positive class",
+    x = "1 - Specificity", y = "Sensitivity"
+  )
 
 # Look at Variable Importance ------
 # vip() does not pin to the workflow's selected penalty — it reads a different
@@ -320,22 +337,6 @@ ggplot(lasso_coef, aes(x = importance, y = reorder(term, importance))) +
   theme_minimal()
 
 lasso_coef   # raw coefficient table for the surviving terms
-
-# collect_predictions(lasso_last_fit) reuses the test-split predictions already
-# computed inside last_fit() above — identical to predict(lasso_fit, test_data)
-# but avoids a redundant prediction call and keeps this plot consistent with the
-# scalar metrics derived from the same last_fit object.
-relapse_pred_lasso_test <- collect_predictions(lasso_last_fit)
-
-# enriched 6/2
-relapse_pred_lasso_test |>
-  roc_curve(truth = outcome, .pred_1, event_level = "second") |>
-  autoplot() +
-  ggplot2::labs(
-    title    = "Pure LASSO: test ROC curve",
-    subtitle = "Held-out 25% test split; relapse as the positive class",
-    x = "1 - Specificity", y = "Sensitivity"
-  )
 
 
 # ── Shrinkage Plots (given mixture settings) ─────────────────────────────────
