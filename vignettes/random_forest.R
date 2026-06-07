@@ -34,35 +34,59 @@ randfor_workflow <-
 # finalize(mtry(), train_data) which uses the RAW column count. But lr_recipe
 # uses step_rm(), step_zv(), and step_corr(threshold = 0.90) — all drop predictors
 # — so finalize() over-counts and some grid values would exceed the actual
-# predictor count during CV, causing errors. We compute the exact post-recipe
-# bound instead.
-max_pred_bound <- ncol(bake(prep(lr_recipe), new_data = NULL)) - 1  # = 108
-
-randfor_grid <-
-  grid_regular(
-    mtry(range = c(1L, max_pred_bound)),
-    min_n(),
-    levels = 5
-  )
-
+# predictor count during CV, causing errors.
+#
+# step_corr() is data-adaptive: it drops different correlated columns depending
+# on each fold's analysis set, so the post-recipe predictor count varies across
+# folds. Folds are created first so we can take the minimum across all analysis
+# sets — guaranteeing no grid value exceeds any fold's actual predictor count.
 set.seed(12345)
 the_folds <- vfold_cv(train_data, v = 5, strata = outcome)
 
+# #Initial max_pred_bound for mtry. No longer in use once windows adjusted.
+# max_pred_bound <-
+#   purrr::map_int(the_folds$splits, \(s) {
+#     ncol(bake(prep(lr_recipe, rsample::analysis(s)), new_data = NULL)) - 1
+#   }) |> min()
+
+randfor_grid <-
+  grid_regular(
+    mtry(range = c(1L, 30L)),
+    min_n(range = c(20L,40L)),
+    levels = 10
+  )
+
 # tune_grid returns a tibble where each row is a resample x hyperparam combo,
 # with a .metrics list column
-cl <- makePSOCKcluster(parallel::detectCores() - 1)
-registerDoParallel(cl)
-randfor_tune <- tune_grid(randfor_workflow, resamples = the_folds, grid = randfor_grid)
-stopCluster(cl)
+randfor_cache <- here::here("vignettes/randfor_tune.rds")
+if (file.exists(randfor_cache)) {
+  randfor_tune <- readRDS(randfor_cache)
+} else {
+  cl <- makePSOCKcluster(parallel::detectCores() - 1)
+  registerDoParallel(cl)
+  randfor_tune <- tune_grid(randfor_workflow, resamples = the_folds, grid = randfor_grid)
+  stopCluster(cl)
+  saveRDS(randfor_tune, randfor_cache)
+}
+
+# run in console and re-adjust window/tune_grid to hone in on desired roc_auc
+randfor_tune |>
+  collect_metrics() |>
+  dplyr::filter(.metric == "roc_auc") |>
+  dplyr::select(mean, mtry, min_n) |>
+  tidyr::pivot_longer(-mean, values_to = "value", names_to = "parameter") |>
+  ggplot2::ggplot(ggplot2::aes(value, mean, color = parameter)) +
+  ggplot2::geom_point(show.legend = FALSE) +
+  ggplot2::facet_wrap(~parameter, scales = "free_x") +
+  ggplot2::labs(x = NULL, y = "AUC")
+
+show_best(randfor_tune, metric = "roc_auc")
 
 # select_by_one_std_err isn't as justifiable here because there is no neat
 # "simpler = better" axis: lower mtry adds randomization, higher min_n prunes,
 # and these pull in different directions with no canonical regularization ordering.
 randfor_favorite <- select_best(randfor_tune, metric = "roc_auc")
 # this outputs a 1-row tibble of mtry, min_n, .config
-
-show_best(randfor_tune, metric = "roc_auc")
-autoplot(randfor_tune)
 
 
 # Model Fit --------

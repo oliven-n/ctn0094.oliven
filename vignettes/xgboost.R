@@ -12,12 +12,13 @@ xgboost_recipe <- lr_recipe
 
 xgboost_spec <-
   boost_tree(
-    trees          = 1000,
+    trees          = 5000,     # upper bound only — early stopping exits well before this
     learn_rate     = tune(),
     tree_depth     = tune(),
     loss_reduction = tune(),
     mtry           = tune(),   # colsample_bytree: fraction of predictors per tree
-    sample_size    = tune()    # subsample: fraction of training rows per tree
+    sample_size    = tune(),   # subsample: fraction of training rows per tree
+    stop_iter      = 50        # stop if no AUC improvement for 50 consecutive rounds
   ) |>
   set_engine('xgboost') |>
   set_mode('classification')
@@ -31,26 +32,28 @@ xgboost_workflow <-
 # Hyperparameter Tuning-----
 # Tuning 5 parameters; trees fixed at 1000 (fixing avoids a 6th dimension and
 # 1000 rounds at a small learn_rate is a solid conservative default).
-# With 5 params, grid_regular explodes (3^5 = 243 combos); use a Latin hypercube
-# instead — space-filling design that covers the hyperparameter volume in ~30 runs.
+# With 5 params, grid_regular explodes (3^5 = 243 combos); use a space-filling
+# design instead — covers the hyperparameter volume efficiently in ~30 runs.
 #
 # Initial range reasoning:
 #   learn_rate    small  c(-3, -1): 0.001–0.1 — slow shrinkage, less overfit
 #   tree_depth    low    c(1, 5):   shallow trees, controls per-tree complexity
-#   loss_reduction high  c(0, 2):   log10 scale → gamma 1–100; requires splits
-#                                   to earn their keep (conservative pruning)
-#   mtry          —      c(0.3,0.9): colsample_bytree proportion (30–90% of cols)
+#   loss_reduction —     c(-2, 1):  log10 scale → gamma 0.01–10; includes near-zero
+#                                   (xgboost default) through moderate pruning
+#   mtry          —      c(30, 90):  integer cols sampled per tree (30–90 of ~104)
 #   sample_size   —      c(0.5,0.9): subsample proportion (50–90% of rows/tree)
 #
 # After tuning, run the console diagnostic plot (see repo notes) to assess
 # whether any axis needs widening/tightening before the final grid.
-xgboost_grid <- grid_latin_hypercube(
-  learn_rate(range     = c(-3, -1)),
-  tree_depth(range     = c(1L, 5L)),
-  loss_reduction(range = c(0, 2)),
-  mtry_prop(range      = c(0.3, 0.9)),
+# could use grid_regular but it would have every grid point in the hypercube
+# here we get to pick the size to be coarser
+xgboost_grid <- grid_space_filling(
+  learn_rate(range     = c(-7, -1.5)),
+  tree_depth(range     = c(2L, 5L)),
+  loss_reduction(range = c(-7, 1)),
+  mtry(range           = c(10L, 90L)),
   sample_prop(range    = c(0.5, 0.9)),
-  size = 30
+  size = 200
 )
 
 set.seed(12345)
@@ -58,10 +61,81 @@ the_folds <- vfold_cv(train_data, v = 5, strata = outcome)
 
 # tune_grid returns a tibble where each row is a resample x hyperparam combo,
 # with a .metrics list column
-cl <- makePSOCKcluster(parallel::detectCores() - 1)
-registerDoParallel(cl)
-xgboost_tune <- tune_grid(xgboost_workflow, resamples = the_folds, grid = xgboost_grid)
-stopCluster(cl)
+xgboost_cache <- here::here("vignettes/xgboost_tune.rds")
+if (file.exists(xgboost_cache)) {
+  xgboost_tune <- readRDS(xgboost_cache)
+} else {
+  cl <- makePSOCKcluster(parallel::detectCores() - 1)
+  registerDoParallel(cl)
+  xgboost_tune <- tune_grid(
+    xgboost_workflow,
+    resamples = the_folds,
+    grid      = xgboost_grid,
+    control   = control_grid(
+      # new-xgboost (2.x/3.x) stores the early-stopping pick under
+      # attributes(...)$early_stop$best_iteration; the old $best_iteration is gone.
+      extract   = \(x) tibble::tibble(best_iter = attributes(extract_fit_engine(x))$early_stop$best_iteration)
+    )
+  )
+  stopCluster(cl)
+  saveRDS(xgboost_tune, xgboost_cache)
+}
+
+# How many trees did each grid point actually use before early stopping?
+# Read this TABLE alongside show_best (AUC) — tree count alone doesn't decide:
+#   - best_iter pinned near the 5000 cap = still improving when cut off
+#     (budget-limited, not converged). The CV AUC tune_grid reports for these
+#     is REAL and if anything a slight UNDERestimate (the model was still
+#     climbing) — so a capped point is still fully valid to use and select as
+#     best. "More trees" is upside left on the table, not a validity problem.
+#     Just pin trees = 5000 at finalize time (last_fit has no early-stop set).
+#   - best_iter well below the cap = converged on its own. Then check its AUC:
+#     good AUC -> low learn_rate works, keep exploring down; weak AUC -> ramp up.
+xgboost_tune |>
+  select(id, .extracts) |>
+  tidyr::unnest(.extracts) |>
+  tidyr::unnest(.extracts) |>
+  group_by(learn_rate, tree_depth, loss_reduction, mtry, sample_size) |>
+  summarise(mean_trees = mean(best_iter), .groups = "drop") |>
+  arrange(mean_trees)
+
+# Trees-to-converge vs learn_rate (the visual version of the table above).
+# x = log10(learn_rate); y = mean best_iter over folds. The dashed line is the
+# 5000-tree cap: points riding it at low learn_rate are budget-limited; points
+# sitting well below it converged on their own.
+xgboost_tune |>
+  select(id, .extracts) |>
+  tidyr::unnest(.extracts) |>
+  tidyr::unnest(.extracts) |>
+  group_by(learn_rate) |>
+  summarise(mean_trees = mean(best_iter), .groups = "drop") |>
+  ggplot2::ggplot(ggplot2::aes(x = log10(learn_rate), y = mean_trees)) +
+  ggplot2::geom_point() +
+  ggplot2::geom_hline(yintercept = 5000, linetype = "dashed") +
+  ggplot2::labs(
+    title = "Trees to converge vs learn_rate",
+    x     = "log10(learn_rate)",
+    y     = "trees before early stopping (mean over folds)"
+  )
+# IMPORTANT: FROM HERE WE ARE SEEING NEARLY EVERY SINGLE POINT OS STILL CONVERGING
+# AT THE 5,000 TREE CAP!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+# THIS DOESN'T INVALIDATE OUR ROCAUC, JUST SHOULD KNOW THAT WHAT THE HYPERPARAMS
+# BECOME IS BEING LEFT ENTIRELY UP TO SHOW_BEST() WHICH IS ARBITRARY ONCE WE ARE
+# INSIDE THAT NEAR-ZERO RANGER!
+
+# run in console and re-adjust window/tune_grid to hone in on desired roc_auc
+xgboost_tune |>
+  collect_metrics() |>
+  dplyr::filter(.metric == "roc_auc") |>
+  dplyr::select(mean, learn_rate, tree_depth, loss_reduction, mtry, sample_size) |>
+  tidyr::pivot_longer(-mean, values_to = "value", names_to = "parameter") |>
+  ggplot2::ggplot(ggplot2::aes(value, mean, color = parameter)) +
+  ggplot2::geom_point(show.legend = FALSE) +
+  ggplot2::facet_wrap(~parameter, scales = "free_x") +
+  ggplot2::labs(x = NULL, y = "AUC")
+
+show_best(xgboost_tune, metric = "roc_auc")
 
 # select_by_one_std_err isn't as justifiable here because there is no neat
 # "simpler = better" axis: smaller learn_rate shrinks more aggressively,
@@ -71,7 +145,7 @@ xgboost_favorite <- select_best(xgboost_tune, metric = "roc_auc")
 # this outputs a 1-row tibble of learn_rate, tree_depth, loss_reduction, mtry, sample_size, .config
 
 show_best(xgboost_tune, metric = "roc_auc")
-autoplot(xgboost_tune)
+#autoplot(xgboost_tune)
 
 
 # Model Fit --------
@@ -203,7 +277,7 @@ collect_predictions(xgboost_last_fit) |>
 vip::vip(xgboost_fit, num_features = 15, geom = "col") +
   ggplot2::labs(
     title    = "XGBoost variable importance",
-    subtitle = "Native gain-based importance (xgboost engine, 1000 trees)",
+    subtitle = "Native gain-based importance (xgboost engine, 5000 trees)",
     x        = "Importance (mean gain across splits)",
     y        = NULL
   ) +
