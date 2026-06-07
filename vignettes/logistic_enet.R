@@ -281,11 +281,21 @@ relapse_pred_lasso |>
     x = "1 - Specificity", y = "Sensitivity"
   )
 
+# ROC/AUC Score table
+# roc_auc() returns the single auc number and has one row with .metric/.estimator/.estimate
+# roc_curve(), like below was before i changed, is the ugly table with everryyy pt
 relapse_pred_lasso |>
-  roc_auc(truth = outcome, .pred_1, event_level = "second")
+  roc_auc(
+    truth = outcome,
+    .pred_1,
+    event_level = "second"
+  )
 
 # Test Metrics --------
 # Divergence: last_fit fits on training split of data_split, evaluates on test.
+# last_fit() fits the final best model to the training set and evaluates the test
+# set. Default metrics (accuracy + roc_auc) are self-consistent, so the test
+# roc_auc reads correctly without any event_level tweak — same as the template.
 lasso_last_fit <- lasso_final_wf |> last_fit(data_split)
 
 collect_metrics(lasso_last_fit)
@@ -305,7 +315,6 @@ lasso_test_metrics <- test_metrics_from_lastfit(
 # scalar metrics derived from the same last_fit object.
 relapse_pred_lasso_test <- collect_predictions(lasso_last_fit)
 
-# enriched 6/2
 relapse_pred_lasso_test |>
   roc_curve(truth = outcome, .pred_1, event_level = "second") |>
   autoplot() +
