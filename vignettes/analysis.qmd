@@ -72,14 +72,14 @@ source("logistic_regression_without_problem_vars.R")
 ```{r logistic-regression-wopv-kfold}
 #| include: false
 #| cache: true
-#| cache-extra: !expr digest::digest(readLines("logistic_regression_wopv_kfold.R"))
+#| cache-extra: !expr list(digest::digest(readLines("logistic_regression_wopv_kfold.R")), file.mtime("lr_kfold_rs.rds"))
 source("logistic_regression_wopv_kfold.R")
 ```
 
 ```{r knn}
 #| include: false
 #| cache: true
-#| cache-extra: !expr digest::digest(readLines("knn.R"))
+#| cache-extra: !expr list(digest::digest(readLines("knn.R")), file.mtime("knn_tune.rds"), file.mtime("knn_vip.rds"))
 source("knn.R")
 ```
 
@@ -94,35 +94,35 @@ knn_cv_auc    <- knn_cv_metrics$mean[knn_cv_metrics$.metric == "roc_auc"]
 ```{r knn-wopv}
 #| include: false
 #| cache: true
-#| cache-extra: !expr digest::digest(readLines("knn_wopv.R"))
+#| cache-extra: !expr list(digest::digest(readLines("knn_wopv.R")), file.mtime("knn_wopv_tune.rds"), file.mtime("knn_wopv_vip.rds"))
 source("knn_wopv.R")
 ```
 
 ```{r logistic-enet}
 #| include: false
 #| cache: true
-#| cache-extra: !expr digest::digest(readLines("logistic_enet.R"))
+#| cache-extra: !expr list(digest::digest(readLines("logistic_enet.R")), file.mtime("enet_tune.rds"), file.mtime("lasso_tune.rds"))
 source("logistic_enet.R")
 ```
 
 ```{r cart}
 #| include: false
 #| cache: true
-#| cache-extra: !expr digest::digest(readLines("cart.R"))
+#| cache-extra: !expr list(digest::digest(readLines("cart.R")), file.mtime("cart_tune.rds"))
 source("cart.R")
 ```
 
 ```{r random-forest}
 #| include: false
 #| cache: true
-#| cache-extra: !expr digest::digest(readLines("random_forest.R"))
+#| cache-extra: !expr list(digest::digest(readLines("random_forest.R")), file.mtime("randfor_tune.rds"))
 source("random_forest.R")
 ```
 
 ```{r xgboost}
 #| include: false
 #| cache: true
-#| cache-extra: !expr digest::digest(readLines("xgboost.R"))
+#| cache-extra: !expr list(digest::digest(readLines("xgboost.R")), file.mtime("xgboost_tune.rds"))
 source("xgboost.R")
 ```
 
