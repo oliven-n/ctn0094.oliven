@@ -183,10 +183,11 @@ enet_fit |>
   extract_fit_parsnip() |>
   tidy()
 
-# Review Fit on the Test Data ------ enriched 6/2
-relapse_pred_enet_test <-
-  predict(enet_fit, test_data, type = "prob") |>
-  bind_cols(test_data |> select(outcome))
+# collect_predictions(enet_last_fit) reuses the test-split predictions already
+# computed inside last_fit() above — identical to predict(enet_fit, test_data)
+# but avoids a redundant prediction call and keeps this plot consistent with the
+# scalar metrics derived from the same last_fit object.
+relapse_pred_enet_test <- collect_predictions(enet_last_fit)
 
 relapse_pred_enet_test |>
   roc_curve(truth = outcome, .pred_1, event_level = "second") |>
@@ -319,10 +320,11 @@ ggplot(lasso_coef, aes(x = importance, y = reorder(term, importance))) +
 
 lasso_coef   # raw coefficient table for the surviving terms
 
-# Review Fit on the Test Data ------
-relapse_pred_lasso_test <-
-  predict(lasso_fit, test_data, type = "prob") |>
-  bind_cols(test_data |> select(outcome))
+# collect_predictions(lasso_last_fit) reuses the test-split predictions already
+# computed inside last_fit() above — identical to predict(lasso_fit, test_data)
+# but avoids a redundant prediction call and keeps this plot consistent with the
+# scalar metrics derived from the same last_fit object.
+relapse_pred_lasso_test <- collect_predictions(lasso_last_fit)
 
 # enriched 6/2
 relapse_pred_lasso_test |>

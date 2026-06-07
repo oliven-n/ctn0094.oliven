@@ -161,11 +161,11 @@ vip::vip(knn_vip_obj, num_features = 15, geom = "col") +
   ) +
   ggplot2::theme_minimal(base_size = 11)
 
-# Review Fit on the Test Data ------
-
-relapse_pred_knn_test <-
-  predict(knn_fit, test_data, type = "prob") |>
-  bind_cols(test_data |> select(outcome))
+# collect_predictions(knn_last_fit) reuses the test-split predictions already
+# computed inside last_fit() above — identical to predict(knn_fit, test_data)
+# but avoids a redundant prediction call and keeps this plot consistent with the
+# scalar metrics derived from the same last_fit object.
+relapse_pred_knn_test <- collect_predictions(knn_last_fit)
 
 # enriched 6/2
 relapse_pred_knn_test |>

@@ -105,10 +105,11 @@ knn_wopv_test_metrics <- test_metrics_from_lastfit(
   knn_last_fit, knn_cut, "KNN (no problem vars)"
 )
 
-# Review Fit on the Test Data ------
-relapse_pred_knn_test <-
-  predict(knn_fit, test_data_wopv, type = "prob") |>
-  bind_cols(test_data_wopv |> select(outcome))
+# collect_predictions(knn_last_fit) reuses the test-split predictions already
+# computed inside last_fit() above — identical to predict(knn_fit, test_data_wopv)
+# but avoids a redundant prediction call and keeps this plot consistent with the
+# scalar metrics derived from the same last_fit object.
+relapse_pred_knn_test <- collect_predictions(knn_last_fit)
 
 # enriched 6/2
 relapse_pred_knn_test |>
