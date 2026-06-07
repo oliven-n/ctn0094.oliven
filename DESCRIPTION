@@ -31,7 +31,8 @@ Suggests:
     digest, 
     kknn,
     vip,
-    xfun
+    xfun,
+    rpart.plot
 VignetteBuilder: quarto
 Depends: 
     R (>= 3.5)
