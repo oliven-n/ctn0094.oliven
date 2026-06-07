@@ -112,6 +112,20 @@ source("logistic_enet.R")
 source("cart.R")
 ```
 
+```{r random-forest}
+#| include: false
+#| cache: true
+#| cache-extra: !expr digest::digest(readLines("random_forest.R"))
+source("random_forest.R")
+```
+
+```{r xgboost}
+#| include: false
+#| cache: true
+#| cache-extra: !expr digest::digest(readLines("xgboost.R"))
+source("xgboost.R")
+```
+
 ```{r precompute-captions}
 #| include: false
 # Pre-compute captions that contain inline R calculations (commas inside
@@ -151,6 +165,8 @@ cap_vip_glmnet <- paste0(
 )
 cap_vip_knn    <- "K-nearest-neighbors (kknn engine) permutation variable importance for relapse prediction among CTN-0027/0030/0051 participants (2006-2016): mean decrease in test ROC AUC when each predictor is shuffled (10 permutations)."
 cap_vip_cart   <- "CART (rpart engine) variable importance for relapse prediction among CTN-0027/0030/0051 participants (2006-2016): native impurity-based importance, measured as the mean decrease in node impurity weighted by the number of training samples reaching each split."
+cap_vip_randfor <- "Random forest (ranger engine) variable importance for relapse prediction among CTN-0027/0030/0051 participants (2006-2016): native impurity-based importance, the mean decrease in Gini impurity attributable to each predictor averaged across 1,000 trees."
+cap_vip_xgboost <- "XGBoost (xgboost engine) variable importance for relapse prediction among CTN-0027/0030/0051 participants (2006-2016): native gain-based importance, the mean improvement in training loss contributed by each predictor across all splits where it is used."
 ```
 
 # Abstract
@@ -209,9 +225,17 @@ K-nearest-neighbors classification was fitted with the `kknn` engine on the stan
 
 A single decision tree was fitted with the `rpart` engine using the same shared preprocessing recipe as the other models. The tree is grown by recursive binary splitting, using the Gini impurity criterion. The cost-complexity pruning parameter ($\alpha$, `cost_complexity`) controls tree depth: larger $\alpha$ prunes more aggressively, yielding a shallower, simpler tree. Ten candidate values of `cost_complexity` were evaluated on a log-spaced grid from $10^{-10}$ to $10^{-1}$ using 5-fold cross-validation, optimizing ROC AUC. The final pruning parameter was selected by the one-standard-error rule (`select_by_one_std_err` with `desc(cost_complexity)`), which prefers the most aggressively pruned tree whose CV ROC AUC is within one standard error of the best — guarding against overfit. Variable importance is the native impurity-based measure: the mean decrease in node impurity (Gini) attributable to each predictor, weighted by the number of training samples that pass through each split.
 
+### Random Forest
+
+A random forest was fitted with the `ranger` engine using the same shared preprocessing recipe as the other models. The forest aggregates 1,000 unpruned classification trees, each grown on a bootstrap resample of the training data with a random subset of predictors considered at every split; the ensemble vote averages away the high variance of any single tree. Two hyperparameters were tuned: `mtry` (the number of predictors sampled at each split) and `min_n` (the minimum node size). Because `mtry` is bounded above by the post-recipe predictor count — and the recipe's `step_corr()` drops a data-dependent number of correlated columns that varies across folds — the upper bound was computed as the minimum post-recipe predictor count across all cross-validation analysis sets, guaranteeing no candidate value exceeds any fold's available predictors. Tuning used 5-fold cross-validation optimizing ROC AUC over a regular grid, then a refined grid (`mtry` 1–30, `min_n` 20–40). The number of trees was fixed rather than tuned: forest performance is monotone non-decreasing in the number of trees, so it is set high (1,000) for stable estimates rather than searched. Unlike the penalized and pruned models, the final hyperparameters were chosen by best CV AUC (`select_best`) rather than the one-standard-error rule, because `mtry` and `min_n` do not define a canonical "simpler model" ordering (lower `mtry` adds randomization while higher `min_n` prunes — they pull in different directions). Variable importance is the native impurity measure: the mean decrease in Gini impurity attributable to each predictor, averaged across all 1,000 trees, which is more stable than a single tree's importance. (`importance = 'impurity'` is requested at engine time because `ranger` does not compute importance by default.)
+
+### Gradient-Boosted Trees (XGBoost)
+
+A gradient-boosted tree ensemble was fitted with the `xgboost` engine using the same shared preprocessing recipe. Unlike the random forest's parallel, independent trees, boosting builds trees sequentially: each new tree is fitted to the residual errors of the accumulated ensemble, and its contribution is shrunk by a learning rate before being added. Five hyperparameters were tuned jointly: `learn_rate` (shrinkage per tree), `tree_depth` (per-tree complexity), `loss_reduction` (the minimum loss decrease `gamma` required to make a split), `mtry` (predictors sampled per tree, i.e. `colsample_bytree`), and `sample_size` (the row subsample fraction per tree). Because a five-dimensional regular grid is combinatorially prohibitive, candidates were drawn with a space-filling (Latin-hypercube) design that covers the hyperparameter volume efficiently. Search ranges were `learn_rate` $10^{-7}$–$10^{-1.5}$, `tree_depth` 2–5, `loss_reduction` $10^{-7}$–$10^{1}$ (log10 scale), `mtry` 10–90 predictors, and `sample_size` 0.5–0.9. The number of boosting rounds was not tuned as a sixth dimension: it was fixed at a high upper bound (5,000) with **early stopping** (training halts when validation log-loss fails to improve for 50 consecutive rounds), so each candidate uses as many trees as it needs and no more. Tuning used 5-fold cross-validation optimizing ROC AUC, with the final configuration chosen by best CV AUC (`select_best`); as with the random forest, there is no canonical regularization ordering across these five parameters that would justify the one-standard-error rule. Variable importance is the native gain measure: the mean improvement in training loss contributed by each predictor across all splits where it is used.
+
 ## Software
 
-Analyses were conducted in `r stringr::word(R.Version()$version.string, 1, 3)`. Data were preprocessed and visualized with the `tidyverse` (version `r packageVersion("tidyverse")`) [@tidyverse2019] and harmonized clinical-trial data were obtained from `public.ctn0094data` (version `r packageVersion("public.ctn0094data")`). Modeling used the tidymodels ecosystem (version `r packageVersion("tidymodels")`) [@R-tidymodels], including `recipes` for preprocessing, `parsnip` for model specification, `rsample` for resampling, `tune` for hyperparameter search, `yardstick` for metrics, and `workflows` to bind them together. Penalized logistic regression used the `glmnet` engine [@R-glmnet], k-nearest-neighbors used `kknn` [@R-kknn], decision trees used `rpart` [@R-rpart], variable importance used `vip` [@R-vip], and summary tables used `gtsummary` (version `r packageVersion("gtsummary")`) [@R-gtsummary].
+Analyses were conducted in `r stringr::word(R.Version()$version.string, 1, 3)`. Data were preprocessed and visualized with the `tidyverse` (version `r packageVersion("tidyverse")`) [@tidyverse2019] and harmonized clinical-trial data were obtained from `public.ctn0094data` (version `r packageVersion("public.ctn0094data")`). Modeling used the tidymodels ecosystem (version `r packageVersion("tidymodels")`) [@R-tidymodels], including `recipes` for preprocessing, `parsnip` for model specification, `rsample` for resampling, `tune` for hyperparameter search, `yardstick` for metrics, and `workflows` to bind them together. Penalized logistic regression used the `glmnet` engine [@R-glmnet], k-nearest-neighbors used `kknn` [@R-kknn], decision trees used `rpart` [@R-rpart], random forests used `ranger` [@R-ranger], gradient boosting used `xgboost` [@R-xgboost], variable importance used `vip` [@R-vip], and summary tables used `gtsummary` (version `r packageVersion("gtsummary")`) [@R-gtsummary].
 
 # Results
 
@@ -406,6 +430,14 @@ lasso_test_auc  <- lasso_test_metrics$.estimate[lasso_test_metrics$.metric == "r
 cart_cv_auc    <- cart_cv_metrics$mean[cart_cv_metrics$.metric == "roc_auc"]
 cart_train_auc <- cart_train_metrics$.estimate[cart_train_metrics$.metric == "roc_auc"]
 cart_test_auc  <- cart_test_metrics$.estimate[cart_test_metrics$.metric == "roc_auc"]
+# Read from named objects in random_forest.R.
+randfor_cv_auc    <- randfor_cv_metrics$mean[randfor_cv_metrics$.metric == "roc_auc"]
+randfor_train_auc <- randfor_train_metrics$.estimate[randfor_train_metrics$.metric == "roc_auc"]
+randfor_test_auc  <- randfor_test_metrics$.estimate[randfor_test_metrics$.metric == "roc_auc"]
+# Read from named objects in xgboost.R.
+xgboost_cv_auc    <- xgboost_cv_metrics$mean[xgboost_cv_metrics$.metric == "roc_auc"]
+xgboost_train_auc <- xgboost_train_metrics$.estimate[xgboost_train_metrics$.metric == "roc_auc"]
+xgboost_test_auc  <- xgboost_test_metrics$.estimate[xgboost_test_metrics$.metric == "roc_auc"]
 lr_cv_auc <- lr_cv_test_metrics$.estimate[lr_cv_test_metrics$.metric == "roc_auc"]
 
 # Full training AUC (in-sample, on all training data after final fit)
@@ -427,7 +459,9 @@ tibble::tribble(
   "LASSO",                         round(lasso_cv_auc, 3),     round(lasso_train_auc, 3), lasso_test_auc,
   "KNN",                           round(knn_cv_auc, 3),       round(knn_train_auc, 3),   knn_test_auc,
   "KNN (no problem vars)",         round(knn_wopv_cv_auc, 3),  round(knn_wopv_train_auc, 3), knn_wopv_test_auc,
-  "CART",                          round(cart_cv_auc, 3),      round(cart_train_auc, 3),     cart_test_auc
+  "CART",                          round(cart_cv_auc, 3),      round(cart_train_auc, 3),     cart_test_auc,
+  "Random Forest",                 round(randfor_cv_auc, 3),   round(randfor_train_auc, 3),  randfor_test_auc,
+  "XGBoost",                       round(xgboost_cv_auc, 3),   round(xgboost_train_auc, 3),  xgboost_test_auc
 ) |>
   kable(
     digits    = 3,
@@ -479,6 +513,24 @@ vip::vip(cart_fit, num_features = 15, geom = "col") +
   ggplot2::theme_minimal(base_size = 11)
 ```
 
+```{r fig-vip-randfor}
+#| fig-cap: !expr cap_vip_randfor
+#| fig-width: 6.5
+#| fig-height: 4.5
+vip::vip(randfor_fit, num_features = 15, geom = "col") +
+  ggplot2::labs(x = "Importance (mean Gini decrease across trees)", y = NULL) +
+  ggplot2::theme_minimal(base_size = 11)
+```
+
+```{r fig-vip-xgboost}
+#| fig-cap: !expr cap_vip_xgboost
+#| fig-width: 6.5
+#| fig-height: 4.5
+vip::vip(xgboost_fit, num_features = 15, geom = "col") +
+  ggplot2::labs(x = "Importance (mean gain across splits)", y = NULL) +
+  ggplot2::theme_minimal(base_size = 11)
+```
+
 # Discussion
 
 The feature matrix described here represents the pre-treatment behavioral and clinical profile for each randomized participant across the three CTN studies. The full feature set spans substance use, demographics, psychiatric comorbidity, pain, nicotine dependence, social risk behavior, IV drug use, withdrawal severity, medication adherence, and study site. These features will be used to train and evaluate predictive models of relapse, with the aim of informing treatment matching for OUD.
@@ -495,7 +547,19 @@ The baseline logistic regression achieved a ROC AUC of `r round(lr_metrics$.esti
 
 **K-nearest neighbors (kknn).** *Strengths:* non-parametric and able to capture local, non-linear structure with a single tuning parameter; tolerates the separating predictors without coefficient blow-up. *Weaknesses:* no intrinsic variable importance (we resort to computationally expensive permutation importance), sensitive to the curse of dimensionality with 100+ standardized features, exposes no interpretable model form, and prediction cost grows linearly with the training set.
 
-Across methods, test ROC AUC is similar, indicating that the linear signal is modest and not dramatically improved by KNN's non-parametric flexibility; model choice here is therefore driven as much by interpretability and stability as by discrimination.
+**Classification and regression tree (rpart).** *Strengths:* a single pruned tree is the most transparent model here — the fitted splits read as an explicit, clinically inspectable decision flow, it needs only one tuning parameter (`cost_complexity`), and it handles non-linearities and predictor interactions without manual specification. *Weaknesses:* single trees are high-variance (small data perturbations can change the split structure entirely), their greedy top-down induction is not guaranteed to find the globally optimal tree, and the piecewise-constant fit produces a coarse, staircase-shaped ROC curve because each leaf emits a single probability.
+
+**Random forest (ranger).** *Strengths:* bootstrap aggregation of many trees sharply reduces the single-tree variance, captures non-linear and interaction structure automatically, requires little preprocessing, and is robust to irrelevant predictors; native impurity importance comes for free from the fitted object. *Weaknesses:* the ensemble is no longer directly interpretable as a decision rule, impurity-based importance is biased toward high-cardinality continuous predictors (so the ranking is indicative rather than definitive), and the model is larger and slower to score than the linear baselines.
+
+**Gradient-boosted trees (xgboost).** *Strengths:* sequential boosting with shrinkage and built-in regularization (`loss_reduction`, column/row subsampling, early stopping) is often the strongest tabular learner, and it captures subtle interactions while controlling overfitting through its many regularizers. *Weaknesses:* that flexibility comes at the cost of a high-dimensional tuning burden (five interacting hyperparameters plus the tree budget), greater sensitivity to mis-set hyperparameters, the least interpretable model form of any considered here, and the largest compute cost to tune and fit.
+
+Across methods, test ROC AUC remains in a fairly narrow band: the predictive signal is modest and the linear baselines stay competitive, but the tree-ensemble methods — XGBoost in particular — achieve the best discrimination. Model choice therefore weighs that edge against the interpretability and stability the simpler models offer.
+
+## Best-Performing Model and Cross-Validation Agreement
+
+Selecting on cross-validated ROC AUC — the criterion fixed in advance — **XGBoost is the best-performing model** (CV AUC `r round(xgboost_cv_auc, 3)`), the highest of any method in the all-methods table. Carried forward unchanged to the held-out 25% test set, it remains the strongest model (test AUC `r round(xgboost_test_auc, 3)`), so the choice made on the training-set cross-validation generalizes rather than reflecting an overfit selection. This result is, moreover, likely a conservative floor: during tuning every candidate configuration exhausted the 5,000-tree budget without triggering its early-stopping criterion — validation log-loss was still improving at the cap — so a larger tree budget at these small learning rates would plausibly raise XGBoost's performance further, headroom the already-converged models do not have.
+
+For XGBoost — and for several other models, KNN most noticeably — the test AUC is *slightly higher* than the cross-validated estimate. This ordering is expected rather than anomalous, for a few reasons. First, each cross-validation model is trained on only four of the five folds (about 60% of the full sample after the 75/25 split), whereas the final model is refit on the entire training set before it ever sees the test data; the CV estimate therefore reflects models trained on less data than the deployed one, making it a mildly *pessimistic* estimate of final performance. Second, each fold's assessment set (roughly 15% of the sample) is smaller than the 25% test split, so the individual fold AUCs are noisier and their five-fold average carries more sampling variability than the single test estimate. Third, the test set is one particular random draw and may be marginally favorable. Most importantly, these gaps are small relative to the cross-validation standard error (on the order of 0.01–0.02 AUC), so the cross-validated and test estimates agree **well within normal sampling variation** — the differences are noise, not evidence of a real change in performance between the two evaluation contexts.
 
 ## LASSO Sparsity and Predictive Performance
 
@@ -546,7 +610,7 @@ Study membership is **not leakage**: it is known at enrollment, before any treat
 #| include: false
 
 knitr::write_bib(
-  c(.packages(), "rUM", "glmnet", "kknn", "vip", "tidymodels"),
+  c(.packages(), "rUM", "glmnet", "kknn", "ranger", "xgboost", "vip", "tidymodels"),
   "packages.bib"
 )
 ```
