@@ -81,9 +81,6 @@ enet_tune <- tune_grid(
 )
 stopCluster(enet_cl)
 
-
-
-# Model Fit --------
 # select_by_one_std_err = the classic "lambda.1se" rule: take the SIMPLEST model
 # whose performance is within one standard error of the best. desc(penalty) tells
 # it that higher penalty = simpler (more shrinkage), so it leans toward sparser
@@ -91,6 +88,7 @@ stopCluster(enet_cl)
 enet_favorite <- select_by_one_std_err(enet_tune, desc(penalty), metric = "roc_auc")
 # this outputs a 1-row tibble of penalty, mixture, .config
 
+# Model Fit --------
 enet_final_wf <- finalize_workflow(enet_workflow, enet_favorite)
 
 enet_fit <- enet_final_wf |> fit(data = train_data)
@@ -232,9 +230,9 @@ lasso_tune <- tune_grid(
 )
 stopCluster(lasso_cl)
 
-# Model Fit --------
 lasso_favorite <- select_by_one_std_err(lasso_tune, desc(penalty), metric = "roc_auc")
 
+# Model Fit --------
 lasso_final_wf <- finalize_workflow(lasso_workflow, lasso_favorite)
 
 lasso_fit <- lasso_final_wf |> fit(data = train_data)

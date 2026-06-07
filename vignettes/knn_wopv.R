@@ -32,10 +32,9 @@ registerDoParallel(cl)
 kknn_tune <- tune_grid(kknn_workflow, resamples = the_folds, grid = knn_grid)
 stopCluster(cl)
 
-
-# Model Fit --------
 favorite <- select_by_one_std_err(kknn_tune, neighbors, metric = "roc_auc")
 
+# Model Fit --------
 final_wf <- finalize_workflow(kknn_workflow, favorite)
 
 knn_fit <- final_wf |> fit(data = train_data_wopv)

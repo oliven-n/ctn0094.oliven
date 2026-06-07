@@ -38,9 +38,6 @@ registerDoParallel(cl)
 kknn_tune <- tune_grid(kknn_workflow, resamples = the_folds, grid = knn_grid)
 stopCluster(cl)
 
-
-# Model Fit --------
-
 # the shrinkage estiamte (selecting k)
 # more k, more shrinkage
 # why are we selecting by one_std_err
@@ -48,6 +45,7 @@ stopCluster(cl)
 favorite <- select_by_one_std_err(kknn_tune, neighbors, metric = "roc_auc")
 # this outputs a 1x2 tibble of neighbors,.config
 
+# Model Fit --------
 final_wf <- finalize_workflow(kknn_workflow, favorite)
 
 knn_fit <- final_wf |> fit(data=train_data)
