@@ -108,10 +108,26 @@ enet_cv_metrics <- collect_metrics(enet_tune) |>
   dplyr::select(.metric, mean, std_err, n)
 enet_cv_metrics
 
-# Review Fit on Training Data-----
+# Train Metrics --------
+# Divergence: enet_fit was trained on ALL of train_data (not CV folds).
+# relapse_pred_enet is in-sample prediction on the same train_data — intentionally
+# optimistic, equivalent to Balise et al.'s "Full Training Dataset" column.
 relapse_pred_enet <-
   predict(enet_fit, train_data, type = "prob") |>
   bind_cols(train_data |> select(outcome))
+
+# Sensitivity & Specificity at the Youden-J cutoff (chosen on TRAIN, not 0.5)
+enet_cut <- youden_cutoff(relapse_pred_enet)
+enet_cut
+
+enet_train_metrics <- dplyr::bind_rows(
+  roc_auc(relapse_pred_enet, truth = outcome, .pred_1, event_level = "second"),
+  sens_spec_at(relapse_pred_enet, enet_cut)
+) |> dplyr::select(.metric, .estimate)
+enet_train_metrics
+
+# Review Fit on Training Data --------
+# Visualization of in-sample fit. relapse_pred_enet and enet_cut defined above.
 
 # ROC/AUC Plot (train) — enriched with title/labels. # enriched 6/2
 relapse_pred_enet |>
@@ -133,22 +149,6 @@ relapse_pred_enet |>
     event_level = "second"
   )
 
-# Sensitivity & Specificity at the Youden-J cutoff (chosen on TRAIN, not 0.5)
-enet_cut <- youden_cutoff(relapse_pred_enet)
-enet_cut
-
-sens_spec_at(relapse_pred_enet, enet_cut)
-
-# Train Metrics --------
-# Divergence: enet_fit was trained on ALL of train_data (not CV folds).
-# relapse_pred_enet is in-sample prediction on the same train_data — intentionally
-# optimistic, equivalent to Balise et al.'s "Full Training Dataset" column.
-enet_train_metrics <- dplyr::bind_rows(
-  roc_auc(relapse_pred_enet, truth = outcome, .pred_1, event_level = "second"),
-  sens_spec_at(relapse_pred_enet, enet_cut)
-) |> dplyr::select(.metric, .estimate)
-enet_train_metrics
-
 # Test Metrics --------
 # Divergence: last_fit fits on training split of data_split, evaluates on test.
 # last_fit() fits the final best model to the training set and evaluates the test
@@ -168,21 +168,7 @@ enet_test_metrics <- test_metrics_from_lastfit(
   enet_last_fit, enet_cut, "Elastic net (ridge)"
 )
 
-# Look at Variable Importance ------
-# Here's where LASSO beats knn: the model IS its coefficients, so importance is
-# meaningful. vip() shows the largest |coefficients| at the selected penalty —
-# the predictors that survived shrinkage. Anything LASSO zeroed out just won't
-# appear, which is the whole selling point (built-in feature selection).
-enet_fit |>
-  extract_fit_parsnip() |>
-  vip(num_features = 20)
-
-# If you'd rather see the raw surviving coefficients (incl. which got zeroed),
-# this gives the glmnet coefficient table at the chosen lambda:
-enet_fit |>
-  extract_fit_parsnip() |>
-  tidy()
-
+# Review Fit on Test Data --------
 # collect_predictions(enet_last_fit) reuses the test-split predictions already
 # computed inside last_fit() above — identical to predict(enet_fit, test_data)
 # but avoids a redundant prediction call and keeps this plot consistent with the
@@ -197,6 +183,21 @@ relapse_pred_enet_test |>
     subtitle = "Held-out 25% test split; relapse as the positive class",
     x = "1 - Specificity", y = "Sensitivity"
   )
+
+# Look at Variable Importance ------
+# Here's where LASSO beats knn: the model IS its coefficients, so importance is
+# meaningful. vip() shows the largest |coefficients| at the selected penalty —
+# the predictors that survived shrinkage. Anything LASSO zeroed out just won't
+# appear, which is the whole selling point (built-in feature selection).
+enet_fit |>
+  extract_fit_parsnip() |>
+  vip(num_features = 20)
+
+# If you'd rather see the raw surviving coefficients (incl. which got zeroed),
+# this gives the glmnet coefficient table at the chosen lambda:
+enet_fit |>
+  extract_fit_parsnip() |>
+  tidy()
 
 
 # ── Pure LASSO ───────────────────────────────────────────────────────────────
