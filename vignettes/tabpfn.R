@@ -23,3 +23,18 @@ bake_X <- function(prepped, new) {
     as.matrix()
 }
 y01 <- function(df) as.integer(as.character(df$outcome))
+
+# Model Fit --------
+# "Fitting" TabPFN stores the training set as in-context memory for the pretrained
+# transformer (no weights are learned). We prep the recipe on ALL of train_data and
+# fit on the full baked matrix — the analog of knn's final fit on all train_data.
+tabpfn_prep <- prep(tabpfn_recipe, training = train_data)
+X_train <- bake_X(tabpfn_prep, train_data)
+y_train <- y01(train_data)
+
+tabpfn_fit <- tabpfn$TabPFNClassifier(device = "cpu", ignore_pretraining_limits = TRUE)
+tabpfn_fit$fit(X_train, y_train)
+
+# predict_proba columns follow the sorted classes_ ; resolve the relapse ("1")
+# column by position so we never hard-code an index.
+relapse_col <- which(as.integer(tabpfn_fit$classes_) == 1L)
