@@ -32,9 +32,10 @@ tabpfn_prep <- prep(tabpfn_recipe, training = train_data)
 X_train <- bake_X(tabpfn_prep, train_data)
 y_train <- y01(train_data)
 
-tabpfn_fit <- tabpfn$TabPFNClassifier(device = "cpu", ignore_pretraining_limits = TRUE)
+tabpfn_fit <- tabpfn$TabPFNClassifier(device = "cpu", ignore_pretraining_limits = TRUE)  # ~1,869 rows exceeds the 1,000-sample CPU default; flag suppresses the RuntimeError
 tabpfn_fit$fit(X_train, y_train)
 
 # predict_proba columns follow the sorted classes_ ; resolve the relapse ("1")
 # column by position so we never hard-code an index.
 relapse_col <- which(as.integer(tabpfn_fit$classes_) == 1L)
+stopifnot(length(relapse_col) == 1L)  # guard: classes_ must contain exactly one "1" class
