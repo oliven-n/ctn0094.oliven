@@ -7,7 +7,6 @@ suppressPackageStartupMessages({
   library(public.ctn0094data)
   library(tidyverse)
   library(scales)
-  library(grid)
 })
 
 # ---- window + grouping machinery (verbatim logic from building_analysis.R) ----
@@ -97,7 +96,7 @@ dy        <- 1                          # vertical spacing per drug row
 box_w     <- 9                          # inner text width budget (data units)
 col_x     <- c(all_drugs = 0, filtered = 16, tlfb = 32)  # left edge of each box
 pad_x     <- 0.6                        # text inset from box left edge
-n_rows    <- max(42, 25)                # tallest column governs box height
+n_rows    <- max(n_distinct(all_drugs_windowed$what), nrow(tlfb_drugs))  # tallest column governs box height
 y_top     <- n_rows * dy                # first row baseline
 box_top   <- y_top + 1.5
 box_bot   <- y_top - (n_rows - 1) * dy - 1.5
