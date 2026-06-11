@@ -214,20 +214,20 @@ tlfb_rel <- tribble(
   "Amphetamine",       "Amphetamine",           "tlfb_grouped",
   # Buprenorphine absorbs Suboxone (Suboxone → Buprenorphine in tlfb)
   "Buprenorphine",     "Buprenorphine",         "tlfb_grouped",
-  # Analgesic absorbs Nalbuphine + Gabapentin/Acetaminophen across instruments
-  "Analgesic",         "Analgesic",             "tlfb_grouped",
+  # Analgesic: 1-to-1 match; Muscle Relaxant is its own tlfb category
+  "Analgesic",         "Analgesic",             "same",
 
   # tlfb_finer: tlfb tracks a specific subset of a broader adf category
   # adf "Cannabinoids" = {Thc, K2}; tlfb "THC" is more specific
   "THC",               "Cannabinoids",          "tlfb_finer",
-  # K2 is also a subset of adf "Cannabinoids" but THC already aligns there
-  "K2",                NA,                      "tlfb_finer",
+  # K2 is also a subset of adf "Cannabinoids"; stacked below THC via row_number()
+  "K2",                "Cannabinoids",          "tlfb_finer",
 
   # tlfb_only: no adf counterpart
   # Alcohol: self-reported in tlfb; adf has 3 categories from a different instrument
   "Alcohol",           "Alcohol Missing Amnt",  "tlfb_only",
-  # Hallucinogen: subsumed by MDMA/Hallucinogen in adf; no standalone adf counterpart
-  "Hallucinogen",      NA,                      "tlfb_only",
+  # Hallucinogen: subset of adf MDMA/Hallucinogen (same as THC→Cannabinoids)
+  "Hallucinogen",      "MDMA/Hallucinogen",     "tlfb_finer",
   # Remaining drugs: not in all_drugs drug_map or axed (n<10) in all_drugs_filtered
   "Cathinones",        NA,                      "tlfb_only",
   "Antibiotic",        NA,                      "tlfb_only",
@@ -254,7 +254,10 @@ aligned_y <- filt_rows |> select(what_grouped, fy = y)
 tlfb_aligned <- tlfb_pos |>
   filter(!is.na(align_cat)) |>
   left_join(aligned_y, by = c("align_cat" = "what_grouped")) |>
-  mutate(y = fy)
+  arrange(align_cat, desc(events)) |>           # within group, higher-event entry is first
+  group_by(align_cat) |>
+  mutate(y = fy - (row_number() - 1L) * dy) |> # first entry at fy, next at fy-1, etc.
+  ungroup()
 
 used_y  <- sort(unique(tlfb_aligned$y), decreasing = TRUE)
 all_y   <- row_y(seq_len(n_rows))
