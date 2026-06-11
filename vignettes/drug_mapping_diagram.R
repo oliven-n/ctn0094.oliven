@@ -200,6 +200,8 @@ tlfb_rel <- tribble(
   "Sedatives",         "Sedatives",             "same",
   "Mdma/Hallucinogen", "MDMA/Hallucinogen",     "same",
   "Muscle Relaxant",   "Muscle Relaxant",       "same",
+  # Analgesic: 1-to-1 match in both adf and tlfb; Muscle Relaxant is its own tlfb category
+  "Analgesic",         "Analgesic",             "same",
 
   # partial: same category name, different drug composition
   # tlfb "Heroin" absorbs Opium (in adf Opium→"Opioid"; in tlfb Opium→"Heroin")
@@ -214,18 +216,14 @@ tlfb_rel <- tribble(
   "Amphetamine",       "Amphetamine",           "tlfb_grouped",
   # Buprenorphine absorbs Suboxone (Suboxone → Buprenorphine in tlfb)
   "Buprenorphine",     "Buprenorphine",         "tlfb_grouped",
-  # Analgesic: 1-to-1 match; Muscle Relaxant is its own tlfb category
-  "Analgesic",         "Analgesic",             "same",
+  # Alcohol: tlfb consolidates 3 adf alcohol categories (Heavy Amnt / Light Amnt / Missing Amnt) into one
+  "Alcohol",           "Alcohol Missing Amnt",  "tlfb_grouped",
 
   # tlfb_finer: tlfb tracks a specific subset of a broader adf category
   # adf "Cannabinoids" = {Thc, K2}; tlfb "THC" is more specific
   "THC",               "Cannabinoids",          "tlfb_finer",
   # K2 is also a subset of adf "Cannabinoids"; stacked below THC via row_number()
   "K2",                "Cannabinoids",          "tlfb_finer",
-
-  # tlfb_only: no adf counterpart
-  # Alcohol: self-reported in tlfb; adf has 3 categories from a different instrument
-  "Alcohol",           "Alcohol Missing Amnt",  "tlfb_only",
   # Hallucinogen: subset of adf MDMA/Hallucinogen (same as THC→Cannabinoids)
   "Hallucinogen",      "MDMA/Hallucinogen",     "tlfb_finer",
   # Remaining drugs: not in all_drugs drug_map or axed (n<10) in all_drugs_filtered
