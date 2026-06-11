@@ -113,11 +113,11 @@ cat("Task 2 layout constants OK\n")
 
 # ---- order surviving categories top->bottom, expand to source rows ----
 cat_order <- surviving$what_grouped                     # 21, by descending n
-src_blocks <- map_dfr(seq_along(cat_order), function(k) {
-  cat_k <- cat_order[k]
-  names_k <- src_map |> filter(what_grouped == cat_k) |> pull(what)
-  tibble(what_grouped = cat_k, what = names_k, cat_rank = k)
-})
+src_blocks <- src_map |>
+  left_join(
+    tibble(what_grouped = cat_order, cat_rank = seq_along(cat_order)),
+    by = "what_grouped"
+  )
 
 # all_drugs rows: grouped sources first (in category order), then axed names
 ad_rows <- bind_rows(
@@ -140,7 +140,8 @@ hl_boxes <- ad_rows |>
             .groups = "drop") |>
   mutate(xmin = col_x["all_drugs"] - 0.3,
          xmax = col_x["all_drugs"] + box_w + 0.3,
-         color = pal[what_grouped])
+         color = pal[what_grouped]) |>
+  arrange(cat_rank)
 
 # filtered-box labels: centered on their source block, colored to match
 filt_rows <- ad_rows |>
