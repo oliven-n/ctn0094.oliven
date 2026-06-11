@@ -176,55 +176,129 @@ cat("Task 3: ", nrow(ad_rows), " all_drugs rows, ",
 stopifnot(nrow(ad_rows) == 42L, nrow(filt_rows) == 21L,
           nrow(hl_boxes) == length(multi_src))
 
-# ---- tlfb green/red: clean 1-to-1 match to a surviving category = green ----
-# Overridable. `match_cat` = the filtered category a tlfb drug maps to (NA = none).
-# Borderline reds (commented): THC/K2 collapse into Cannabinoids; Alcohol splits
-# into 3 alcohol categories; Hallucinogen is subsumed by MDMA/Hallucinogen.
-tlfb_match <- tribble(
-  ~what,               ~match_cat,
-  "Heroin",            "Heroin",
-  "Opioid",            "Opioid",
-  "Cocaine",           "Cocaine",
-  "Methadone",         "Methadone",
-  "Benzodiazepine",    "Benzodiazepine",
-  "Amphetamine",       "Amphetamine",
-  "Buprenorphine",     "Buprenorphine",
-  "Sedatives",         "Sedatives",
-  "Muscle Relaxant",   "Muscle Relaxant",
-  "Mdma/Hallucinogen", "MDMA/Hallucinogen",
-  "Analgesic",         "Analgesic",
-  "Pcp",               "Pcp",
-  "Antiemetic",        "Antiemetic"
+# ---- tlfb relationship-type coloring (5-category system) ----
+# same:         semantically equivalent — same drugs, same effective name
+# tlfb_grouped: tlfb consolidates multiple adf categories into one
+# tlfb_finer:   tlfb is more specific than an adf category (subset)
+# partial:      same category name, different underlying drug composition
+# tlfb_only:    no adf counterpart (different instrument or n<10 axed)
+REL_COLORS <- c(
+  same         = "#4682B4",   # steelblue
+  tlfb_grouped = "#D06010",   # orange
+  tlfb_finer   = "#2C9A50",   # green
+  partial      = "#9060C0",   # purple
+  tlfb_only    = "#CC4444"    # red
+)
+
+tlfb_rel <- tribble(
+  ~what,               ~align_cat,              ~rel_type,
+  # same: semantically equivalent
+  "Methadone",         "Methadone",             "same",
+  "Benzodiazepine",    "Benzodiazepine",        "same",
+  "Pcp",               "Pcp",                   "same",
+  "Antiemetic",        "Antiemetic",            "same",
+  "Sedatives",         "Sedatives",             "same",
+  "Mdma/Hallucinogen", "MDMA/Hallucinogen",     "same",
+  "Muscle Relaxant",   "Muscle Relaxant",       "same",
+
+  # partial: same category name, different drug composition
+  # tlfb "Heroin" absorbs Opium (in adf Opium→"Opioid"; in tlfb Opium→"Heroin")
+  "Heroin",            "Heroin",                "partial",
+  # tlfb "Opioid" includes drugs like Fentanyl; adf "Opioid" includes Opium — different sets
+  "Opioid",            "Opioid",                "partial",
+
+  # tlfb_grouped: tlfb consolidates multiple adf categories into one
+  # Cocaine absorbs Crack (Crack → Cocaine in tlfb; Crack is own adf category)
+  "Cocaine",           "Cocaine",               "tlfb_grouped",
+  # Amphetamine absorbs Methamphetamine (Methamphetamine → Amphetamine in tlfb)
+  "Amphetamine",       "Amphetamine",           "tlfb_grouped",
+  # Buprenorphine absorbs Suboxone (Suboxone → Buprenorphine in tlfb)
+  "Buprenorphine",     "Buprenorphine",         "tlfb_grouped",
+  # Analgesic absorbs Nalbuphine + Gabapentin/Acetaminophen across instruments
+  "Analgesic",         "Analgesic",             "tlfb_grouped",
+
+  # tlfb_finer: tlfb tracks a specific subset of a broader adf category
+  # adf "Cannabinoids" = {Thc, K2}; tlfb "THC" is more specific
+  "THC",               "Cannabinoids",          "tlfb_finer",
+  # K2 is also a subset of adf "Cannabinoids" but THC already aligns there
+  "K2",                NA,                      "tlfb_finer",
+
+  # tlfb_only: no adf counterpart
+  # Alcohol: self-reported in tlfb; adf has 3 categories from a different instrument
+  "Alcohol",           "Alcohol Missing Amnt",  "tlfb_only",
+  # Hallucinogen: subsumed by MDMA/Hallucinogen in adf; no standalone adf counterpart
+  "Hallucinogen",      NA,                      "tlfb_only",
+  # Remaining drugs: not in all_drugs drug_map or axed (n<10) in all_drugs_filtered
+  "Cathinones",        NA,                      "tlfb_only",
+  "Antibiotic",        NA,                      "tlfb_only",
+  "Antidepressant",    NA,                      "tlfb_only",
+  "Antipsychotic",     NA,                      "tlfb_only",
+  "Methylphenidate",   NA,                      "tlfb_only",
+  "Unknown",           NA,                      "tlfb_only",
+  "Antihistamine",     NA,                      "tlfb_only",
+  "Inhalant",          NA,                      "tlfb_only"
+)
+
+# every align_cat (non-NA) must be a real adf surviving category
+stopifnot(all(na.omit(tlfb_rel$align_cat) %in% cat_order))
+# every tlfb drug must be in the rel table
+stopifnot(
+  "tlfb_rel is missing entries" = all(tlfb_drugs$what %in% tlfb_rel$what)
 )
 
 tlfb_pos <- tlfb_drugs |>
-  left_join(tlfb_match, by = "what") |>
-  mutate(is_match = !is.na(match_cat),
-         color    = if_else(is_match, "#1a9c3b", "#d62728"))  # green / red
+  left_join(tlfb_rel, by = "what") |>
+  mutate(rel_color = REL_COLORS[rel_type])
 
-# every listed match must be a real surviving category
-stopifnot(all(na.omit(tlfb_pos$match_cat) %in% cat_order))
-
-# green rows align to their filtered category's y; reds fill leftover rows
-green_y <- filt_rows |> select(what_grouped, fy = y)
-tlfb_green <- tlfb_pos |>
-  filter(is_match) |>
-  left_join(green_y, by = c("match_cat" = "what_grouped")) |>
+aligned_y <- filt_rows |> select(what_grouped, fy = y)
+tlfb_aligned <- tlfb_pos |>
+  filter(!is.na(align_cat)) |>
+  left_join(aligned_y, by = c("align_cat" = "what_grouped")) |>
   mutate(y = fy)
 
-used_y <- sort(unique(tlfb_green$y), decreasing = TRUE)
-all_y  <- row_y(seq_len(n_rows))
-free_y <- sort(setdiff(round(all_y, 6), round(used_y, 6)), decreasing = TRUE)
-tlfb_red <- tlfb_pos |>
-  filter(!is_match) |>
+used_y  <- sort(unique(tlfb_aligned$y), decreasing = TRUE)
+all_y   <- row_y(seq_len(n_rows))
+free_y  <- sort(setdiff(round(all_y, 6), round(used_y, 6)), decreasing = TRUE)
+
+tlfb_unaligned <- tlfb_pos |>
+  filter(is.na(align_cat)) |>
   mutate(y = free_y[seq_len(n())])
 
-tlfb_rows <- bind_rows(tlfb_green, tlfb_red) |>
+tlfb_rows <- bind_rows(tlfb_aligned, tlfb_unaligned) |>
   mutate(x = col_x["tlfb"] + pad_x)
 
-stopifnot(nrow(tlfb_rows) == 25L, sum(tlfb_rows$is_match) == 13L)
-cat("Task 4: ", sum(tlfb_rows$is_match), " green / ",
-    sum(!tlfb_rows$is_match), " red tlfb rows\n", sep = "")
+stopifnot(nrow(tlfb_rows) == 25L,
+          all(!is.na(tlfb_rows$rel_type)),
+          all(tlfb_rows$rel_type %in% names(REL_COLORS)))
+cat("Task 4: tlfb relationship-type checks PASSED — ",
+    nrow(tlfb_aligned), " aligned, ", nrow(tlfb_unaligned), " unaligned\n", sep = "")
+
+# ---- two-way arrows between tlfb and adf (aligned pairs only) ----
+tlfb_arrows <- tlfb_rows |>
+  filter(!is.na(align_cat)) |>
+  left_join(filt_rows |> select(what_grouped, adf_y = y),
+            by = c("align_cat" = "what_grouped")) |>
+  transmute(
+    x    = col_x["tlfb"] - 1.1,
+    xend = col_x["filtered"] + box_w + 1.1,
+    y    = y,
+    yend = adf_y
+  )
+
+# ---- legend ----
+legend_df <- tibble(
+  rel_type = names(REL_COLORS),
+  label = c(
+    "same: same drugs, same name",
+    "tlfb_grouped: tlfb lumps adf categories",
+    "tlfb_finer: tlfb more specific than adf",
+    "partial: same name, different drugs",
+    "tlfb_only: no adf counterpart"
+  ),
+  color = unname(REL_COLORS),
+  x = col_x["tlfb"] - 1,
+  y = box_bot - 1.2 - (seq_len(length(REL_COLORS)) - 1) * 1.1
+)
 
 # ---- OVERFLOW GUARDS ----
 char_w   <- 0.16                          # approx data-units per char at base_size 11
@@ -273,15 +347,22 @@ p <- ggplot() +
   geom_segment(data = arrows_df, aes(x = x, y = y, xend = xend, yend = yend),
                arrow = arrow(length = unit(0.18, "cm"), type = "closed"),
                linewidth = 0.6, color = "grey20") +
+  geom_segment(data = tlfb_arrows,
+               aes(x = x, y = y, xend = xend, yend = yend),
+               arrow = arrow(ends = "both", length = unit(0.15, "cm"), type = "closed"),
+               linewidth = 0.5, color = "grey30") +
   geom_text(data = ad_rows,
             aes(x, y, label = label, color = I(text_color)),
             hjust = 0, size = 3.1, family = "Courier", fontface = "bold") +
   geom_text(data = filt_rows, aes(x, y, label = what_grouped, color = I(color)),
             hjust = 0, size = 3.3, family = "Courier", fontface = "bold") +
-  geom_text(data = tlfb_rows, aes(x, y, label = what, color = I(color)),
+  geom_text(data = tlfb_rows, aes(x, y, label = what, color = I(rel_color)),
             hjust = 0, size = 3.1, family = "Courier", fontface = "bold") +
   geom_text(data = titles_df, aes(x, y, label = label),
             size = 5.5, fontface = "bold") +
+  geom_point(data = legend_df, aes(x, y, color = I(color)), size = 2.5) +
+  geom_text(data = legend_df, aes(x + 0.5, y, label = label, color = I(color)),
+            hjust = 0, size = 2.6, family = "Courier") +
   coord_equal(clip = "off") +
   theme_void() +
   theme(plot.margin = margin(20, 20, 20, 20))
