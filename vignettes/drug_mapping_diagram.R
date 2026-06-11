@@ -155,3 +155,53 @@ cat("Task 3: ", nrow(ad_rows), " all_drugs rows, ",
     nrow(filt_rows), " filtered labels, ",
     nrow(hl_boxes), " highlight boxes\n", sep = "")
 stopifnot(nrow(ad_rows) == 42L, nrow(filt_rows) == 21L, nrow(hl_boxes) == 21L)
+
+# ---- tlfb green/red: clean 1-to-1 match to a surviving category = green ----
+# Overridable. `match_cat` = the filtered category a tlfb drug maps to (NA = none).
+# Borderline reds (commented): THC/K2 collapse into Cannabinoids; Alcohol splits
+# into 3 alcohol categories; Hallucinogen is subsumed by MDMA/Hallucinogen.
+tlfb_match <- tribble(
+  ~what,               ~match_cat,
+  "Heroin",            "Heroin",
+  "Opioid",            "Opioid",
+  "Cocaine",           "Cocaine",
+  "Methadone",         "Methadone",
+  "Benzodiazepine",    "Benzodiazepine",
+  "Amphetamine",       "Amphetamine",
+  "Buprenorphine",     "Buprenorphine",
+  "Sedatives",         "Sedatives",
+  "Muscle Relaxant",   "Muscle Relaxant",
+  "Mdma/Hallucinogen", "MDMA/Hallucinogen",
+  "Analgesic",         "Analgesic",
+  "Pcp",               "Pcp",
+  "Antiemetic",        "Antiemetic"
+)
+
+tlfb_pos <- tlfb_drugs |>
+  left_join(tlfb_match, by = "what") |>
+  mutate(is_match = !is.na(match_cat),
+         color    = if_else(is_match, "#1a9c3b", "#d62728"))  # green / red
+
+# every listed match must be a real surviving category
+stopifnot(all(na.omit(tlfb_pos$match_cat) %in% cat_order))
+
+# green rows align to their filtered category's y; reds fill leftover rows
+green_y <- filt_rows |> select(what_grouped, fy = y)
+tlfb_green <- tlfb_pos |>
+  filter(is_match) |>
+  left_join(green_y, by = c("match_cat" = "what_grouped")) |>
+  mutate(y = fy)
+
+used_y <- sort(unique(tlfb_green$y), decreasing = TRUE)
+all_y  <- row_y(seq_len(n_rows))
+free_y <- sort(setdiff(round(all_y, 6), round(used_y, 6)), decreasing = TRUE)
+tlfb_red <- tlfb_pos |>
+  filter(!is_match) |>
+  mutate(y = free_y[seq_len(n())])
+
+tlfb_rows <- bind_rows(tlfb_green, tlfb_red) |>
+  mutate(x = col_x["tlfb"] + pad_x)
+
+stopifnot(nrow(tlfb_rows) == 25L, sum(tlfb_rows$is_match) == 13L)
+cat("Task 4: ", sum(tlfb_rows$is_match), " green / ",
+    sum(!tlfb_rows$is_match), " red tlfb rows\n", sep = "")
