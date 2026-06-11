@@ -132,6 +132,17 @@ ad_rows <- bind_rows(
 # distinct color per surviving category (21), readable on white
 pal <- setNames(hue_pal(l = 45, c = 100)(length(cat_order)), cat_order)
 
+# pharmacological opioids that are not in the "Opioid" all_drugs_filtered category
+# (they map to their own categories: Heroin, Methadone, Buprenorphine, Suboxone, Fentanyl)
+pharma_opioids_outside_group <- c("Heroin", "Methadone", "Buprenorphine", "Suboxone", "Fentanyl")
+
+ad_rows <- ad_rows |>
+  mutate(
+    text_color = if_else(kind == "grouped", pal[what_grouped], "black"),
+    asterisk   = what %in% pharma_opioids_outside_group,
+    label      = if_else(asterisk, paste0(what, " *"), what)
+  )
+
 # highlight boxes only for multi-source groups (2+ raw drugs mapping to same category)
 multi_src <- src_map |> count(what_grouped) |> filter(n >= 2) |> pull(what_grouped)
 hl_boxes <- ad_rows |>
@@ -210,7 +221,7 @@ cat("Task 4: ", sum(tlfb_rows$is_match), " green / ",
 
 # ---- OVERFLOW GUARDS ----
 char_w   <- 0.16                          # approx data-units per char at base_size 11
-longest  <- max(nchar(c(ad_rows$what, filt_rows$what_grouped, tlfb_rows$what)))
+longest  <- max(nchar(c(ad_rows$label, filt_rows$what_grouped, tlfb_rows$what)))
 stopifnot(
   "a label is wider than its box" = longest * char_w <= box_w,
   "all_drugs rows below box floor" = min(ad_rows$y)   >= box_bot + 0.5,
@@ -255,10 +266,9 @@ p <- ggplot() +
   geom_segment(data = arrows_df, aes(x = x, y = y, xend = xend, yend = yend),
                arrow = arrow(length = unit(0.18, "cm"), type = "closed"),
                linewidth = 0.6, color = "grey20") +
-  geom_text(data = filter(ad_rows, kind == "grouped"),
-            aes(x, y, label = what), hjust = 0, size = 3.1) +
-  geom_text(data = filter(ad_rows, kind == "axed"),
-            aes(x, y, label = what), hjust = 0, size = 3.1, color = "black") +
+  geom_text(data = ad_rows,
+            aes(x, y, label = label, color = I(text_color)),
+            hjust = 0, size = 3.1) +
   geom_text(data = filt_rows, aes(x, y, label = what_grouped, color = I(color)),
             hjust = 0, size = 3.3, fontface = "bold") +
   geom_text(data = tlfb_rows, aes(x, y, label = what, color = I(color)),
