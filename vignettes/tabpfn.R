@@ -85,7 +85,9 @@ tabpfn_fit$predict_proba(X_train)[1:3, ] # expect: 3x2 matrix, rows sum to ~1
 set.seed(12345)
 the_folds <- vfold_cv(train_data, v = 5, strata = outcome)
 
-#
+# normally, prep and bake would be called internally inside the workflow by tune_grid(), fit(), and last_fit()
+# but because TabPFN has no parsnip engine, there is no model spec and therefore no workflow, so we call them manually here per fold
+
 tabpfn_cv_cache <- here::here("vignettes/tabpfn_cv.rds")
 if (file.exists(tabpfn_cv_cache)) {
   tabpfn_cv_auc <- readRDS(tabpfn_cv_cache)
@@ -113,3 +115,148 @@ tabpfn_cv_metrics <- tibble(
   n       = nrow(tabpfn_cv_auc)
 )
 tabpfn_cv_metrics
+
+# Train Metrics --------
+# Divergence: tabpfn_fit was "fit" on ALL of train_data; relapse_pred_tabpfn is
+# in-sample prediction on the same train_data — intentionally optimistic,
+# equivalent to Balise et al.'s "Full Training Dataset" column.
+# Uses leave-one-out context: each training row predicted using all others as context.
+proba_train <- tabpfn_fit$predict_proba(X_train)
+relapse_pred_tabpfn <- tibble(
+  .pred_0 = proba_train[, setdiff(1:2, relapse_col)],
+  .pred_1 = proba_train[, relapse_col],
+  outcome = train_data$outcome
+)
+
+tabpfn_cut <- youden_cutoff(relapse_pred_tabpfn)
+tabpfn_cut
+
+tabpfn_train_metrics <- bind_rows(
+  roc_auc(relapse_pred_tabpfn, truth = outcome, .pred_1, event_level = "second"),
+  sens_spec_at(relapse_pred_tabpfn, tabpfn_cut)
+) |> select(.metric, .estimate)
+tabpfn_train_metrics
+
+# Review Fit on Training Data --------
+# Visualization of in-sample fit. relapse_pred_tabpfn and tabpfn_cut defined above.
+
+# ROC/AUC Plot (train) — enriched with title/labels.
+relapse_pred_tabpfn |>
+  roc_curve(truth = outcome, .pred_1, event_level = "second") |>
+  autoplot() +
+  labs(
+    title    = "TabPFN: training ROC curve",
+    subtitle = "Relapse as the positive class; pretrained transformer (no tuning)",
+    x = "1 - Specificity", y = "Sensitivity"
+  )
+
+# ROC/AUC Score table
+relapse_pred_tabpfn |>
+  roc_curve(
+    truth = outcome,
+    .pred_1,
+    event_level = "second"
+  )
+
+# Test Metrics --------
+# No last_fit object → build the method/.metric/.estimate tibble by hand to match
+# the helper's schema so analysis.qmd still row-binds it.
+# Structure verified against knn_test_metrics: same column names/order/types
+# and same .metric order: accuracy, roc_auc, sens, spec.
+# Youden-J cutoff chosen on train_data (tabpfn_cut), applied here.
+X_test <- bake_X(tabpfn_prep, test_data)
+proba_test <- tabpfn_fit$predict_proba(X_test)
+relapse_pred_tabpfn_test <- tibble(
+  .pred_0 = proba_test[, setdiff(1:2, relapse_col)],
+  .pred_1 = proba_test[, relapse_col],
+  outcome = test_data$outcome
+)
+
+# accuracy at the tidymodels default 0.5 threshold (matches collect_metrics()),
+# then roc_auc, then sens/spec at the TRAIN-chosen cutoff — same order
+# test_metrics_from_lastfit() emits (collect_metrics' accuracy+roc_auc, then ss).
+acc_at_half <- relapse_pred_tabpfn_test |>
+  mutate(.pred_class = factor(if_else(.pred_1 >= 0.5, "1", "0"),
+                              levels = c("0", "1"))) |>
+  accuracy(truth = outcome, estimate = .pred_class)
+
+tabpfn_test_metrics <- bind_rows(
+  acc_at_half,
+  roc_auc(relapse_pred_tabpfn_test, truth = outcome, .pred_1, event_level = "second"),
+  sens_spec_at(relapse_pred_tabpfn_test, tabpfn_cut)
+) |>
+  transmute(method = "TabPFN", .metric, .estimate)
+
+# Structural contract check: tabpfn_test_metrics MUST match knn_test_metrics'
+# schema so analysis.qmd's bind_rows of the per-method tables stays valid.
+if (exists("knn_test_metrics")) {
+  stopifnot(
+    identical(names(tabpfn_test_metrics), names(knn_test_metrics)),
+    identical(sapply(tabpfn_test_metrics, class), sapply(knn_test_metrics, class)),
+    identical(tabpfn_test_metrics$.metric, knn_test_metrics$.metric)
+  )
+}
+tabpfn_test_metrics
+
+# Review Fit on Test Data --------
+# relapse_pred_tabpfn_test holds the held-out test-split predictions computed above.
+relapse_pred_tabpfn_test |>
+  roc_curve(truth = outcome, .pred_1, event_level = "second") |>
+  autoplot() +
+  labs(
+    title    = "TabPFN: test ROC curve",
+    subtitle = "Held-out 25% test split; relapse as the positive class",
+    x = "1 - Specificity", y = "Sensitivity"
+  )
+
+# Look at Variable Importance ------
+# TabPFN has no intrinsic coefficients, so (like knn.R) we use model-agnostic
+# PERMUTATION importance: shuffle one predictor at a time and measure the drop in
+# test ROC AUC. A bigger drop = a more important predictor.
+
+# AUC metric honoring the positive class ("1" = relapse = second level).
+# vip requires the metric fn to take arguments named `truth` and `estimate`.
+tabpfn_auc_metric <- function(truth, estimate) {
+  roc_auc_vec(truth = truth, estimate = estimate, event_level = "second")
+}
+
+
+tabpfn_vip_cache <- here::here("vignettes/tabpfn_vip.rds")
+if (file.exists(tabpfn_vip_cache)) {
+  tabpfn_vip_obj <- readRDS(tabpfn_vip_cache)
+} else {
+  set.seed(12345)
+  n_passes <- length(setdiff(names(train_data), c("who", "outcome"))) * 1L
+  pass_count <- 0L
+  tabpfn_vip_obj <- vi_permute(
+    object        = tabpfn_fit,
+    feature_names = setdiff(names(train_data), c("who", "outcome")),
+    train         = train_data,
+    target        = "outcome",
+    metric        = tabpfn_auc_metric,
+    smaller_is_better = FALSE,
+    pred_wrapper  = function(object, newdata) {
+      # vip subsets newdata to feature_names, dropping the `who` ID column the
+      # recipe needs; re-add a dummy (who has role "ID", so it never affects preds).
+      if (!"who" %in% names(newdata)) newdata$who <- 1L
+      # TabPFN needs a baked numeric matrix — bake through tabpfn_prep before predicting.
+      proba <- tabpfn_fit$predict_proba(bake_X(tabpfn_prep, newdata))
+      pass_count <<- pass_count + 1L
+      cat(sprintf("\r%d / %d passes complete", pass_count, n_passes))
+      flush.console()
+      proba[, relapse_col]
+    },
+    nsim     = 1
+  )
+  saveRDS(tabpfn_vip_obj, tabpfn_vip_cache)
+}
+
+# VIP plot (top 15), enriched with title/axis/description.
+vip(tabpfn_vip_obj, num_features = 15, geom = "col") +
+  labs(
+    title    = "TabPFN permutation variable importance",
+    subtitle = "Mean drop in test ROC AUC when each predictor is shuffled (1 permutation)",
+    x        = "Importance (mean ROC AUC decrease)",
+    y        = NULL
+  ) +
+  theme_minimal(base_size = 11)
