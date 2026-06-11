@@ -267,7 +267,7 @@ titles_df <- tibble(
 
 p <- ggplot() +
   geom_polygon(data = panels, aes(x, y, group = group),
-               fill = NA, color = "black", linewidth = 0.8) +
+               fill = "#FFF4DC", color = "black", linewidth = 0.8) +
   geom_polygon(data = hl_poly, aes(x, y, group = group, color = I(color), fill = I(fill_color)),
                linewidth = 0.9) +
   geom_segment(data = arrows_df, aes(x = x, y = y, xend = xend, yend = yend),
