@@ -261,6 +261,8 @@ used_y  <- sort(unique(tlfb_aligned$y), decreasing = TRUE)
 all_y   <- row_y(seq_len(n_rows))
 free_y  <- sort(setdiff(round(all_y, 6), round(used_y, 6)), decreasing = TRUE)
 
+stopifnot("more unaligned tlfb rows than free y-positions" =
+            sum(is.na(tlfb_pos$align_cat)) <= length(free_y))
 tlfb_unaligned <- tlfb_pos |>
   filter(is.na(align_cat)) |>
   mutate(y = free_y[seq_len(n())])
