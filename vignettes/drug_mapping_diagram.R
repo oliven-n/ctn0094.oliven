@@ -219,3 +219,57 @@ stopifnot(
                                          hl_boxes$ymin >= box_bot + 0.3)
 )
 cat("Task 5 overflow guards PASSED (longest label = ", longest, " chars)\n", sep = "")
+
+# ---- outer box polygons (3 panels) ----
+panels <- bind_rows(
+  rounded_rect(col_x["all_drugs"]-1, box_bot, col_x["all_drugs"]+box_w+1, box_top, r=0.8, group="all_drugs"),
+  rounded_rect(col_x["filtered"]-1,  box_bot, col_x["filtered"]+box_w+1,  box_top, r=0.8, group="filtered"),
+  rounded_rect(col_x["tlfb"]-1,      box_bot, col_x["tlfb"]+box_w+1,      box_top, r=0.8, group="tlfb")
+)
+
+# ---- highlight box polygons ----
+hl_poly <- pmap_dfr(hl_boxes, function(what_grouped, cat_rank, ymin, ymax, xmin, xmax, color) {
+  rounded_rect(xmin, ymin, xmax, ymax, r = 0.4, group = what_grouped) |>
+    mutate(color = color)
+})
+
+# ---- arrows: highlight box right edge -> filtered label left ----
+arrows_df <- hl_boxes |>
+  left_join(filt_rows |> select(what_grouped, fy = y), by = "what_grouped") |>
+  transmute(x = xmax + 0.1, xend = col_x["filtered"] - 0.4,
+            y = (ymin + ymax) / 2, yend = fy)
+
+titles_df <- tibble(
+  label = c("all_drugs", "all_drugs_filtered", "tlfb"),
+  x = c(col_x["all_drugs"]+box_w/2, col_x["filtered"]+box_w/2, col_x["tlfb"]+box_w/2),
+  y = box_top + 1.2
+)
+
+p <- ggplot() +
+  geom_polygon(data = panels, aes(x, y, group = group),
+               fill = NA, color = "black", linewidth = 0.8) +
+  geom_polygon(data = hl_poly, aes(x, y, group = group, color = I(color)),
+               fill = NA, linewidth = 0.9) +
+  geom_segment(data = arrows_df, aes(x = x, y = y, xend = xend, yend = yend),
+               arrow = arrow(length = unit(0.18, "cm"), type = "closed"),
+               linewidth = 0.6, color = "grey20") +
+  geom_text(data = filter(ad_rows, kind == "grouped"),
+            aes(x, y, label = what), hjust = 0, size = 3.1) +
+  geom_text(data = filter(ad_rows, kind == "axed"),
+            aes(x, y, label = what), hjust = 0, size = 3.1, color = "black") +
+  geom_text(data = filt_rows, aes(x, y, label = what_grouped, color = I(color)),
+            hjust = 0, size = 3.3, fontface = "bold") +
+  geom_text(data = tlfb_rows, aes(x, y, label = what, color = I(color)),
+            hjust = 0, size = 3.1) +
+  geom_text(data = titles_df, aes(x, y, label = label),
+            size = 5.5, fontface = "bold") +
+  coord_equal(clip = "off") +
+  theme_void() +
+  theme(plot.margin = margin(20, 20, 20, 20))
+
+dir.create("vignettes/figures", showWarnings = FALSE, recursive = TRUE)
+ggsave("vignettes/figures/drug_mapping_diagram.png", p,
+       width = 13, height = 11, dpi = 200, bg = "white")
+ggsave("vignettes/figures/drug_mapping_diagram.pdf", p,
+       width = 13, height = 11, bg = "white")
+cat("Task 6: wrote vignettes/figures/drug_mapping_diagram.{png,pdf}\n")
