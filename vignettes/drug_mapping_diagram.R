@@ -31,7 +31,7 @@ day_zero_lookup <- screening_date |>
 in_window <- function(df) {
   df |>
     left_join(day_zero_lookup, by = "who") |>
-    mutate(day_zero = replace_na(day_zero, 0L)) |>
+    mutate(day_zero = replace_na(day_zero, 0L)) |>  # defensive: participants absent from screening_date get NA from left_join
     filter(when >= day_zero - 28, when < day_zero)
 }
 
