@@ -110,3 +110,47 @@ stopifnot(
     (box_top - box_bot) >= n_rows * dy
 )
 cat("Task 2 layout constants OK\n")
+
+# ---- order surviving categories top->bottom, expand to source rows ----
+cat_order <- surviving$what_grouped                     # 21, by descending n
+src_blocks <- map_dfr(seq_along(cat_order), function(k) {
+  cat_k <- cat_order[k]
+  names_k <- src_map |> filter(what_grouped == cat_k) |> pull(what)
+  tibble(what_grouped = cat_k, what = names_k, cat_rank = k)
+})
+
+# all_drugs rows: grouped sources first (in category order), then axed names
+ad_rows <- bind_rows(
+  src_blocks |> mutate(kind = "grouped"),
+  tibble(what = axed_raw, what_grouped = NA_character_, cat_rank = NA_integer_,
+         kind = "axed")
+) |>
+  mutate(row = row_number(),
+         y   = row_y(row),
+         x   = col_x["all_drugs"] + pad_x)
+
+# distinct color per surviving category (21), readable on white
+pal <- setNames(hue_pal(l = 45, c = 100)(length(cat_order)), cat_order)
+
+# highlight box bounds: enclose each category's contiguous source rows
+hl_boxes <- ad_rows |>
+  filter(kind == "grouped") |>
+  group_by(what_grouped, cat_rank) |>
+  summarize(ymin = min(y) - 0.45 * dy, ymax = max(y) + 0.45 * dy,
+            .groups = "drop") |>
+  mutate(xmin = col_x["all_drugs"] - 0.3,
+         xmax = col_x["all_drugs"] + box_w + 0.3,
+         color = pal[what_grouped])
+
+# filtered-box labels: centered on their source block, colored to match
+filt_rows <- ad_rows |>
+  filter(kind == "grouped") |>
+  group_by(what_grouped, cat_rank) |>
+  summarize(y = mean(y), .groups = "drop") |>
+  mutate(x = col_x["filtered"] + pad_x, color = pal[what_grouped]) |>
+  arrange(cat_rank)
+
+cat("Task 3: ", nrow(ad_rows), " all_drugs rows, ",
+    nrow(filt_rows), " filtered labels, ",
+    nrow(hl_boxes), " highlight boxes\n", sep = "")
+stopifnot(nrow(ad_rows) == 42L, nrow(filt_rows) == 21L, nrow(hl_boxes) == 21L)
