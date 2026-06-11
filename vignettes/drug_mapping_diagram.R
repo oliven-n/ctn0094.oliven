@@ -275,11 +275,11 @@ p <- ggplot() +
                linewidth = 0.6, color = "grey20") +
   geom_text(data = ad_rows,
             aes(x, y, label = label, color = I(text_color)),
-            hjust = 0, size = 3.1) +
+            hjust = 0, size = 3.1, family = "Courier", fontface = "bold") +
   geom_text(data = filt_rows, aes(x, y, label = what_grouped, color = I(color)),
-            hjust = 0, size = 3.3, fontface = "bold") +
+            hjust = 0, size = 3.3, family = "Courier", fontface = "bold") +
   geom_text(data = tlfb_rows, aes(x, y, label = what, color = I(color)),
-            hjust = 0, size = 3.1) +
+            hjust = 0, size = 3.1, family = "Courier", fontface = "bold") +
   geom_text(data = titles_df, aes(x, y, label = label),
             size = 5.5, fontface = "bold") +
   coord_equal(clip = "off") +
