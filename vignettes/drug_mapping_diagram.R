@@ -75,7 +75,8 @@ stopifnot(
   "tlfb windowed drugs != 25"           = nrow(tlfb_drugs) == 25L,
   "expected multi-source groups"        = setequal(
     src_map |> count(what_grouped) |> filter(n >= 2) |> pull(what_grouped),
-    c("Opioid","Cannabinoids","MDMA/Hallucinogen","Analgesic"))
+    c("Opioid","Cannabinoids","MDMA/Hallucinogen","Analgesic")),
+  "a drug maps to multiple categories"  = all(count(src_map, what)$n == 1L)
 )
 cat("Task 1 integrity checks PASSED\n")
 
@@ -120,7 +121,7 @@ src_blocks <- src_map |>
 
 # all_drugs rows: grouped sources first (in category order), then axed names
 ad_rows <- bind_rows(
-  src_blocks |> mutate(kind = "grouped"),
+  src_blocks |> arrange(cat_rank) |> mutate(kind = "grouped"),
   tibble(what = axed_raw, what_grouped = NA_character_, cat_rank = NA_integer_,
          kind = "axed")
 ) |>
@@ -131,9 +132,10 @@ ad_rows <- bind_rows(
 # distinct color per surviving category (21), readable on white
 pal <- setNames(hue_pal(l = 45, c = 100)(length(cat_order)), cat_order)
 
-# highlight box bounds: enclose each category's contiguous source rows
+# highlight boxes only for multi-source groups (2+ raw drugs mapping to same category)
+multi_src <- src_map |> count(what_grouped) |> filter(n >= 2) |> pull(what_grouped)
 hl_boxes <- ad_rows |>
-  filter(kind == "grouped") |>
+  filter(kind == "grouped", what_grouped %in% multi_src) |>
   group_by(what_grouped, cat_rank) |>
   summarize(ymin = min(y) - 0.45 * dy, ymax = max(y) + 0.45 * dy,
             .groups = "drop") |>
@@ -153,7 +155,8 @@ filt_rows <- ad_rows |>
 cat("Task 3: ", nrow(ad_rows), " all_drugs rows, ",
     nrow(filt_rows), " filtered labels, ",
     nrow(hl_boxes), " highlight boxes\n", sep = "")
-stopifnot(nrow(ad_rows) == 42L, nrow(filt_rows) == 21L, nrow(hl_boxes) == 21L)
+stopifnot(nrow(ad_rows) == 42L, nrow(filt_rows) == 21L,
+          nrow(hl_boxes) == length(multi_src))
 
 # ---- tlfb green/red: clean 1-to-1 match to a surviving category = green ----
 # Overridable. `match_cat` = the filtered category a tlfb drug maps to (NA = none).
@@ -229,7 +232,7 @@ panels <- bind_rows(
 # ---- highlight box polygons ----
 hl_poly <- pmap_dfr(hl_boxes, function(what_grouped, cat_rank, ymin, ymax, xmin, xmax, color) {
   rounded_rect(xmin, ymin, xmax, ymax, r = 0.4, group = what_grouped) |>
-    mutate(color = color)
+    mutate(color = color, fill_color = alpha(color, 0.15))
 })
 
 # ---- arrows: highlight box right edge -> filtered label left ----
@@ -247,8 +250,8 @@ titles_df <- tibble(
 p <- ggplot() +
   geom_polygon(data = panels, aes(x, y, group = group),
                fill = NA, color = "black", linewidth = 0.8) +
-  geom_polygon(data = hl_poly, aes(x, y, group = group, color = I(color)),
-               fill = NA, linewidth = 0.9) +
+  geom_polygon(data = hl_poly, aes(x, y, group = group, color = I(color), fill = I(fill_color)),
+               linewidth = 0.9) +
   geom_segment(data = arrows_df, aes(x = x, y = y, xend = xend, yend = yend),
                arrow = arrow(length = unit(0.18, "cm"), type = "closed"),
                linewidth = 0.6, color = "grey20") +
@@ -265,6 +268,8 @@ p <- ggplot() +
   coord_equal(clip = "off") +
   theme_void() +
   theme(plot.margin = margin(20, 20, 20, 20))
+
+print(p)
 
 dir.create("vignettes/figures", showWarnings = FALSE, recursive = TRUE)
 ggsave("vignettes/figures/drug_mapping_diagram.png", p,
