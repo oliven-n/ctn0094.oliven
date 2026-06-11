@@ -205,3 +205,17 @@ tlfb_rows <- bind_rows(tlfb_green, tlfb_red) |>
 stopifnot(nrow(tlfb_rows) == 25L, sum(tlfb_rows$is_match) == 13L)
 cat("Task 4: ", sum(tlfb_rows$is_match), " green / ",
     sum(!tlfb_rows$is_match), " red tlfb rows\n", sep = "")
+
+# ---- OVERFLOW GUARDS ----
+char_w   <- 0.16                          # approx data-units per char at base_size 11
+longest  <- max(nchar(c(ad_rows$what, filt_rows$what_grouped, tlfb_rows$what)))
+stopifnot(
+  "a label is wider than its box" = longest * char_w <= box_w,
+  "all_drugs rows below box floor" = min(ad_rows$y)   >= box_bot + 0.5,
+  "all_drugs rows above box top"   = max(ad_rows$y)   <= box_top - 0.5,
+  "tlfb rows out of box"           = all(tlfb_rows$y  >= box_bot + 0.5 &
+                                         tlfb_rows$y  <= box_top - 0.5),
+  "highlight box exceeds panel"    = all(hl_boxes$ymax <= box_top - 0.3 &
+                                         hl_boxes$ymin >= box_bot + 0.3)
+)
+cat("Task 5 overflow guards PASSED (longest label = ", longest, " chars)\n", sep = "")
