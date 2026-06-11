@@ -79,3 +79,34 @@ stopifnot(
     c("Opioid","Cannabinoids","MDMA/Hallucinogen","Analgesic"))
 )
 cat("Task 1 integrity checks PASSED\n")
+
+# ---- dependency-free rounded rectangle (closed polygon path) ----
+rounded_rect <- function(xmin, ymin, xmax, ymax, r, n = 16, group = "g") {
+  r <- min(r, (xmax - xmin) / 2, (ymax - ymin) / 2)
+  a <- seq(0, pi / 2, length.out = n)
+  tr <- cbind(xmax - r + r * sin(a), ymax - r + r * cos(a))  # top-right
+  br <- cbind(xmax - r + r * cos(a), ymin + r - r * sin(a))  # bottom-right
+  bl <- cbind(xmin + r - r * sin(a), ymin + r - r * cos(a))  # bottom-left
+  tl <- cbind(xmin + r - r * cos(a), ymax - r + r * sin(a))  # top-left
+  m  <- rbind(tr, br, bl, tl)
+  tibble(group = group, x = c(m[, 1], m[1, 1]), y = c(m[, 2], m[1, 2]))
+}
+
+# ---- layout constants ----
+dy        <- 1                          # vertical spacing per drug row
+box_w     <- 9                          # inner text width budget (data units)
+col_x     <- c(all_drugs = 0, filtered = 16, tlfb = 32)  # left edge of each box
+pad_x     <- 0.6                        # text inset from box left edge
+n_rows    <- max(42, 25)                # tallest column governs box height
+y_top     <- n_rows * dy                # first row baseline
+box_top   <- y_top + 1.5
+box_bot   <- y_top - (n_rows - 1) * dy - 1.5
+
+# row y for the i-th item (1-based, top to bottom)
+row_y <- function(i) y_top - (i - 1) * dy
+
+stopifnot(
+  "box height must exceed tallest list" =
+    (box_top - box_bot) >= n_rows * dy
+)
+cat("Task 2 layout constants OK\n")
