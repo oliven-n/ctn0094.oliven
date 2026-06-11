@@ -136,6 +136,13 @@ pal <- setNames(hue_pal(l = 45, c = 100)(length(cat_order)), cat_order)
 # (they map to their own categories: Heroin, Methadone, Buprenorphine, Suboxone, Fentanyl)
 pharma_opioids_outside_group <- c("Heroin", "Methadone", "Buprenorphine", "Suboxone", "Fentanyl")
 
+stopifnot(
+  "pharma_opioids_outside_group: some entries absent from all_drugs_windowed" =
+    all(pharma_opioids_outside_group %in% as.character(all_drugs_windowed$what)),
+  "pharma_opioids_outside_group: some entries are in drug_map (map to a group, not themselves)" =
+    !any(pharma_opioids_outside_group %in% names(drug_map))
+)
+
 ad_rows <- ad_rows |>
   mutate(
     text_color = if_else(kind == "grouped", pal[what_grouped], "black"),
