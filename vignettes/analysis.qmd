@@ -586,6 +586,15 @@ vip::vip(xgboost_fit, num_features = 15, geom = "col") +
   ggplot2::theme_minimal(base_size = 11)
 ```
 
+```{r fig-vip-tabpfn}
+#| fig-cap: !expr cap_vip_tabpfn
+#| fig-width: 6.5
+#| fig-height: 4.5
+vip::vip(tabpfn_vip_obj, num_features = 15, geom = "col") +
+  ggplot2::labs(x = "Importance (mean ROC AUC decrease)", y = NULL) +
+  ggplot2::theme_minimal(base_size = 11)
+```
+
 # Discussion
 
 The feature matrix described here represents the pre-treatment behavioral and clinical profile for each randomized participant across the three CTN studies. The full feature set spans substance use, demographics, psychiatric comorbidity, pain, nicotine dependence, social risk behavior, IV drug use, withdrawal severity, medication adherence, and study site. These features will be used to train and evaluate predictive models of relapse, with the aim of informing treatment matching for OUD.
