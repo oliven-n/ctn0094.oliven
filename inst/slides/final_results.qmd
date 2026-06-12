@@ -195,11 +195,11 @@ Three NIDA Clinical Trials Network randomized controlled trials, harmonized in `
 
 ## Substance Use: Drug Aggregation
 
-:::: {.columns style="gap:0.4em; align-items:flex-start;"}
-::: {.column width="85%"}
-![](../../vignettes/figures/drug_mapping_diagram_nokey.png){style="display:block; margin:0; max-height:72vh; width:auto; max-width:100%;"}
+:::: {.columns style="display:flex !important; align-items:flex-start; height:80%;"}
+::: {.column width="65%" style="height:100%;"}
+![](../../vignettes/figures/drug_mapping_diagram_nokey.png){width=100% style="max-height:70vh; object-fit:contain; display:block;"}
 :::
-::: {.column width="15%" style="font-size:0.58em; padding-top:0.3em; line-height:1.5;"}
+::: {.column width="35%" style="font-size:0.65em; padding-left:0.6em; padding-top:0.5em; line-height:1.6;"}
 1. Sparse (≤10 events) → dropped
 2. Distinct opioids kept separate
 3. Related sparse drugs merged
