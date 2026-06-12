@@ -183,11 +183,11 @@ stopifnot(nrow(ad_rows) == 42L, nrow(filt_rows) == 21L,
 # partial:      same category name, different underlying drug composition
 # tlfb_only:    no adf counterpart (different instrument or n<10 axed)
 REL_COLORS <- c(
-  same         = "#4682B4",   # steelblue
-  tlfb_grouped = "#D06010",   # orange
-  tlfb_finer   = "#2C9A50",   # green
-  partial      = "#9060C0",   # purple
-  tlfb_only    = "#CC4444"    # red
+  same         = "#1E3A5F",   # very dark navy
+  tlfb_grouped = "#7A3B00",   # dark burnt sienna
+  tlfb_finer   = "#1A5C36",   # dark forest green
+  partial      = "#5C1F7A",   # dark grape
+  tlfb_only    = "#000000"    # black
 )
 
 tlfb_rel <- tribble(
@@ -198,7 +198,7 @@ tlfb_rel <- tribble(
   "Pcp",               "Pcp",                   "same",
   "Antiemetic",        "Antiemetic",            "same",
   "Sedatives",         "Sedatives",             "same",
-  "Mdma/Hallucinogen", "MDMA/Hallucinogen",     "same",
+  "Mdma/Hallucinogen", "MDMA/Hallucinogen",     "tlfb_finer",
   "Muscle Relaxant",   "Muscle Relaxant",       "same",
   # Analgesic: 1-to-1 match in both adf and tlfb; Muscle Relaxant is its own tlfb category
   "Analgesic",         "Analgesic",             "same",
