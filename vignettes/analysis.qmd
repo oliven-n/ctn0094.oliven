@@ -175,6 +175,8 @@ cap_vip_cart   <- "CART (rpart engine) variable importance for relapse predictio
 cap_vip_randfor <- "Random forest (ranger engine) variable importance for relapse prediction among CTN-0027/0030/0051 participants (2006-2016): native impurity-based importance, the mean decrease in Gini impurity attributable to each predictor averaged across 1,000 trees."
 cap_vip_xgboost <- "XGBoost (xgboost engine) variable importance for relapse prediction among CTN-0027/0030/0051 participants (2006-2016): native gain-based importance, the mean improvement in training loss contributed by each predictor across all splits where it is used."
 cap_vip_tabpfn  <- "TabPFN (pretrained transformer) permutation variable importance for relapse prediction among CTN-0027/0030/0051 participants (2006-2016): mean decrease in test ROC AUC when each predictor is shuffled (1 permutation)."
+cap_roc_randfor <- "Random forest ROC curve on the held-out 25% test split (CTN-0027/0030/0051 participants, 2006–2016). Relapse is the positive class."
+cap_roc_tabpfn  <- "TabPFN ROC curve on the held-out 25% test split (CTN-0027/0030/0051 participants, 2006–2016). Relapse is the positive class."
 ```
 
 # Abstract
@@ -592,6 +594,38 @@ vip::vip(xgboost_fit, num_features = 15, geom = "col") +
 #| fig-height: 4.5
 vip::vip(tabpfn_vip_obj, num_features = 15, geom = "col") +
   ggplot2::labs(x = "Importance (mean ROC AUC decrease)", y = NULL) +
+  ggplot2::theme_minimal(base_size = 11)
+```
+
+## ROC Curves for Winner(s)
+
+```{r fig-roc-randfor}
+#| fig-cap: !expr cap_roc_randfor
+#| fig-width: 5
+#| fig-height: 3.5
+relapse_pred_randfor_test |>
+  roc_curve(truth = outcome, .pred_1, event_level = "second") |>
+  autoplot() +
+  ggplot2::labs(
+    title    = "Random Forest: test ROC curve",
+    subtitle = paste0("Test AUC = ", round(randfor_test_auc, 3)),
+    x = "1 - Specificity", y = "Sensitivity"
+  ) +
+  ggplot2::theme_minimal(base_size = 11)
+```
+
+```{r fig-roc-tabpfn}
+#| fig-cap: !expr cap_roc_tabpfn
+#| fig-width: 5
+#| fig-height: 3.5
+relapse_pred_tabpfn_test |>
+  roc_curve(truth = outcome, .pred_1, event_level = "second") |>
+  autoplot() +
+  ggplot2::labs(
+    title    = "TabPFN: test ROC curve",
+    subtitle = paste0("Test AUC = ", round(tabpfn_test_auc, 3)),
+    x = "1 - Specificity", y = "Sensitivity"
+  ) +
   ggplot2::theme_minimal(base_size = 11)
 ```
 
