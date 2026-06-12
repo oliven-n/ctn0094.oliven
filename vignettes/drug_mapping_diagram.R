@@ -340,7 +340,8 @@ tlfb_arrows_one <- tlfb_rows |>
          what != "Alcohol") |>
   left_join(filt_rows |> select(what_grouped, adf_y = y),
             by = c("align_cat" = "what_grouped")) |>
-  transmute(x = ADF_R, xend = TLFB_L, y = adf_y, yend = y)
+  rename(tlfb_y = y) |>  # avoid transmute self-reference: y = adf_y then yend = y would shadow
+  transmute(x = ADF_R, xend = TLFB_L, y = adf_y, yend = tlfb_y)
 
 # 3. Extra partial arrows: adf Fentanyl and Suboxone → tlfb Opioid
 opioid_tlfb_y <- tlfb_rows$y[tlfb_rows$what == "Opioid"]
@@ -382,6 +383,9 @@ extra_grouped_arrows <- bind_rows(
 )
 
 # ---- legend ----
+# same: white bullet w/ black border (tlfb drugs inherit adf colors — no single hue)
+# tlfb_grouped / tlfb_finer / partial: matching TLFB_TEXT_COLORS grays
+# tlfb_only: black
 legend_df <- tibble(
   rel_type = names(REL_COLORS),
   label = c(
@@ -391,7 +395,13 @@ legend_df <- tibble(
     "partial: near match with grouping/ungrouping inconsistencies",
     "tlfb_only {black}: no adf counterpart"
   ),
-  color = unname(REL_COLORS),
+  text_col   = c("black",  TLFB_TEXT_COLORS["tlfb_grouped"], TLFB_TEXT_COLORS["tlfb_finer"],
+                 TLFB_TEXT_COLORS["partial"], "#000000"),
+  fill_col   = c("white",  TLFB_TEXT_COLORS["tlfb_grouped"], TLFB_TEXT_COLORS["tlfb_finer"],
+                 TLFB_TEXT_COLORS["partial"], "#000000"),
+  border_col = c("black",  TLFB_TEXT_COLORS["tlfb_grouped"], TLFB_TEXT_COLORS["tlfb_finer"],
+                 TLFB_TEXT_COLORS["partial"], "#000000"),
+  pt_shape   = c(21L, 19L, 19L, 19L, 19L),
   x = col_x["tlfb"] - 1,
   y = box_bot - 1.2 - (seq_len(length(REL_COLORS)) - 1) * 1.1
 )
@@ -489,9 +499,11 @@ p <- ggplot() +
             hjust = 0, size = 3.1, family = "Courier", fontface = "bold") +
   geom_text(data = titles_df, aes(x, y, label = label),
             size = 5.5, fontface = "bold") +
-  # Legend
-  geom_point(data = legend_df, aes(x, y, color = I(color)), size = 2.5) +
-  geom_text(data = legend_df, aes(x + 0.5, y, label = label, color = I(color)),
+  # Legend — shape 21 for "same" (white fill + black border), 19 for the rest
+  geom_point(data = legend_df,
+             aes(x, y, color = I(border_col), fill = I(fill_col), shape = I(pt_shape)),
+             size = 2.5) +
+  geom_text(data = legend_df, aes(x + 0.5, y, label = label, color = I(text_col)),
             hjust = 0, size = 2.6, family = "Courier") +
   coord_equal(clip = "off") +
   theme_void() +
