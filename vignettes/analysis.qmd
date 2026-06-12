@@ -451,7 +451,7 @@ TabPFN requires no hyperparameter tuning — its configuration is fully determin
 ```{r tbl-tabpfn-metrics}
 #| tbl-cap: "TabPFN model performance. Train: leave-one-out in-context inference on all training observations (pretrained transformer weights, no tuning). Test: held-out 25% split. Sensitivity and specificity computed at the Youden-J cutoff chosen on the training set."
 bind_cols(
-  tabpfn_train_metrics |> dplyr::rename(Train = .estimate),
+  tabpfn_train_metrics |> dplyr::select(.metric, Train = .estimate),
   tabpfn_test_metrics  |> dplyr::filter(.metric != "accuracy") |> dplyr::select(Test = .estimate)
 ) |>
   dplyr::mutate(.metric = c("ROC AUC", "Sensitivity", "Specificity")) |>
