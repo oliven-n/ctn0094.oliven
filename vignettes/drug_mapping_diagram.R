@@ -598,8 +598,14 @@ cat("Task 6: wrote vignettes/figures/drug_mapping_diagram.{png,pdf}\n")
 
 # No-key variant for slides: strip the 9 key layers (indices 15–23 in p$layers),
 # keep main content (1–14) and figure title (24).
+# coord_equal on the wide 17x11 canvas pads horizontal whitespace because the
+# content is ~43 units wide and ~47 units tall. Override with tight xlim and
+# square save dimensions to fill the frame.
 p_nokey <- p
 p_nokey$layers <- p_nokey$layers[c(1:14, 24)]
+p_nokey <- p_nokey +
+  coord_equal(xlim = c(-2, col_x["tlfb"] + box_w + 2), clip = "off") +
+  theme(plot.margin = margin(5, 5, 5, 5))
 ggsave("vignettes/figures/drug_mapping_diagram_nokey.png", p_nokey,
-       width = 17, height = 11, dpi = 200, bg = "white")
+       width = 11, height = 12, dpi = 200, bg = "white")
 cat("Task 6b: wrote vignettes/figures/drug_mapping_diagram_nokey.png\n")
