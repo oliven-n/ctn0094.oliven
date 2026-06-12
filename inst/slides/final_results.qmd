@@ -196,7 +196,7 @@ Three NIDA Clinical Trials Network randomized controlled trials, harmonized in `
 ## Substance Use: Drug Aggregation
 
 <div style="display:flex; flex-direction:row; align-items:flex-start; gap:1em;">
-<img src="../../vignettes/figures/drug_mapping_diagram_nokey.png" style="width:65%; height:auto;" />
+<img src="../../vignettes/figures/drug_mapping_diagram_nokey.png" style="width:57%; height:auto;" />
 <ol style="width:35%; font-size:0.65em; line-height:1.8; margin:0; padding-left:1.2em;">
 <li>Sparse (≤10 events) → dropped</li>
 <li>Distinct opioids kept separate</li>
