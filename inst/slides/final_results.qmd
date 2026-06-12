@@ -315,9 +315,25 @@ tibble::tribble(
 
 ## Selecting the Winner(s)
 
+```{r winner-calc}
+#| include: false
+all_cv_aucs <- c(
+  "Logistic"      = lr_cv_auc,
+  "Elastic net"   = enet_cv_auc,
+  "LASSO"         = lasso_cv_auc,
+  "KNN"           = knn_cv_auc,
+  "CART"          = cart_cv_auc,
+  "Random Forest" = randfor_cv_auc,
+  "XGBoost"       = xgboost_cv_auc,
+  "TabPFN"        = tabpfn_cv_auc
+)
+winner_name <- names(which.max(all_cv_aucs))
+winner_cv   <- max(all_cv_aucs)
+```
+
 Winner selected by **highest 5-fold cross-validated ROC AUC** (criterion fixed in advance):
 
-- **`r if (tabpfn_cv_auc >= xgboost_cv_auc && tabpfn_cv_auc >= randfor_cv_auc) "TabPFN" else if (xgboost_cv_auc >= randfor_cv_auc) "XGBoost" else "Random Forest"`** — CV AUC `r round(max(tabpfn_cv_auc, xgboost_cv_auc, randfor_cv_auc), 3)` — formal winner by CV criterion
+- **`r winner_name`** — CV AUC `r round(winner_cv, 3)` — formal winner by CV criterion
 
 Two models also highlighted for additional potential:
 
