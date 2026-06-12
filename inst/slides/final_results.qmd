@@ -197,9 +197,9 @@ Three NIDA Clinical Trials Network randomized controlled trials, harmonized in `
 
 :::: {.columns style="gap:0.4em; align-items:flex-start;"}
 ::: {.column width="85%"}
-![](../../vignettes/figures/drug_mapping_diagram_nokey.png){width=100% style="display:block; margin:0;"}
+![](../../vignettes/figures/drug_mapping_diagram_nokey.png){style="display:block; margin:0; max-height:72vh; width:auto; max-width:100%;"}
 :::
-::: {.column width="15%" style="font-size:0.62em; padding-top:0.2em;"}
+::: {.column width="15%" style="font-size:0.58em; padding-top:0.3em; line-height:1.5;"}
 1. Sparse (≤10 events) → dropped
 2. Distinct opioids kept separate
 3. Related sparse drugs merged
@@ -208,21 +208,21 @@ Three NIDA Clinical Trials Network randomized controlled trials, harmonized in `
 :::
 ::::
 
-## Per-Drug & Derived Features
+## Per-Drug & Derived Features {.smaller}
 
 **For each of `r length(surviving_drugs)` surviving drug categories, up to three features:**
 
 - **`_days`** — total days of detected use: how *frequent* was use?
 - **`_binary`** — any use in the window (0/1): was it present at all?
 - **`_streak`** — longest consecutive-day run: was use *sustained*?
-  Omitted for MOUD agents (buprenorphine, methadone, suboxone) — consecutive use = adherence, not escalation
+  *(omitted for MOUD agents — consecutive use = adherence, not escalation)*
 
 **Cross-drug composite features:**
 
-- **`alcohol_restraint`** — heavy drinking days − light drinking days (restraint index)
+- **`alcohol_restraint`** — heavy drinking days − light drinking days
 - **`polydrug_days`** — days with ≥ 2 distinct categories simultaneously
 - **`drug_breadth`** — number of distinct categories used in the window
-- **`lie_rate`** — UDS-positive but TLFB self-reported no use ÷ total UDS-positive days (under-reporting proxy)
+- **`lie_rate`** — UDS-positive but TLFB self-report absent ÷ total UDS-positive days
 
 # Preprocessing
 
