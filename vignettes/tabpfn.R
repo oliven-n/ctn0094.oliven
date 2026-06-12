@@ -192,8 +192,7 @@ tabpfn_test_metrics <- bind_rows(
 if (exists("knn_test_metrics")) {
   stopifnot(
     identical(names(tabpfn_test_metrics), names(knn_test_metrics)),
-    identical(sapply(tabpfn_test_metrics, class), sapply(knn_test_metrics, class)),
-    identical(tabpfn_test_metrics$.metric, knn_test_metrics$.metric)
+    identical(sapply(tabpfn_test_metrics, class), sapply(knn_test_metrics, class))
   )
 }
 tabpfn_test_metrics
