@@ -72,18 +72,21 @@ set.seed(12345)
 enet_folds <- vfold_cv(train_data, v = 5, strata = outcome)
 
 # parallel backend so the 5 mixtures fan out across cores
-enet_cl <- makePSOCKcluster(parallel::detectCores() - 1)
-registerDoParallel(enet_cl)
-enet_tune <- tune_grid(
-  enet_workflow,
-  resamples = enet_folds,
-  grid      = enet_grid
-)
-stopCluster(enet_cl)
+enet_cache <- here::here("vignettes/enet_tune.rds")
+if (file.exists(enet_cache)) {
+  enet_tune <- readRDS(enet_cache)
+} else {
+  enet_cl <- makePSOCKcluster((if (nzchar(Sys.getenv("_R_CHECK_LIMIT_CORES_"))) 2L else max(1L, parallel::detectCores() - 1L)))
+  registerDoParallel(enet_cl)
+  enet_tune <- tune_grid(
+    enet_workflow,
+    resamples = enet_folds,
+    grid      = enet_grid
+  )
+  stopCluster(enet_cl)
+  saveRDS(enet_tune, enet_cache)
+}
 
-
-
-# Model Fit --------
 # select_by_one_std_err = the classic "lambda.1se" rule: take the SIMPLEST model
 # whose performance is within one standard error of the best. desc(penalty) tells
 # it that higher penalty = simpler (more shrinkage), so it leans toward sparser
@@ -91,14 +94,46 @@ stopCluster(enet_cl)
 enet_favorite <- select_by_one_std_err(enet_tune, desc(penalty), metric = "roc_auc")
 # this outputs a 1-row tibble of penalty, mixture, .config
 
+# Model Fit --------
 enet_final_wf <- finalize_workflow(enet_workflow, enet_favorite)
 
 enet_fit <- enet_final_wf |> fit(data = train_data)
 
-# Review Fit on Training Data-----
+# CV Metrics --------
+# Divergence: tune_grid fit on 5-fold subsets of train_data (enet_folds; each fold holds
+# out 1/5 for validation). The final model below is a fresh fit on ALL train_data.
+# mean = average of the 5 fold-level roc_auc .estimates tune_grid computed internally;
+# std_err = sd of those estimates / sqrt(5); n = 5.
+# sens/spec omitted here: not available from tune_grid without save_pred=TRUE.
+enet_cv_metrics <- collect_metrics(enet_tune) |>
+  dplyr::filter(
+    .metric == "roc_auc",
+    penalty == enet_favorite$penalty,
+    mixture == enet_favorite$mixture
+  ) |>
+  dplyr::select(.metric, mean, std_err, n)
+enet_cv_metrics
+
+# Train Metrics --------
+# Divergence: enet_fit was trained on ALL of train_data (not CV folds).
+# relapse_pred_enet is in-sample prediction on the same train_data — intentionally
+# optimistic, equivalent to Balise et al.'s "Full Training Dataset" column.
 relapse_pred_enet <-
   predict(enet_fit, train_data, type = "prob") |>
   bind_cols(train_data |> select(outcome))
+
+# Sensitivity & Specificity at the Youden-J cutoff (chosen on TRAIN, not 0.5)
+enet_cut <- youden_cutoff(relapse_pred_enet)
+enet_cut
+
+enet_train_metrics <- dplyr::bind_rows(
+  roc_auc(relapse_pred_enet, truth = outcome, .pred_1, event_level = "second"),
+  sens_spec_at(relapse_pred_enet, enet_cut)
+) |> dplyr::select(.metric, .estimate)
+enet_train_metrics
+
+# Review Fit on Training Data --------
+# Visualization of in-sample fit. relapse_pred_enet and enet_cut defined above.
 
 # ROC/AUC Plot (train) — enriched with title/labels. # enriched 6/2
 relapse_pred_enet |>
@@ -120,13 +155,8 @@ relapse_pred_enet |>
     event_level = "second"
   )
 
-# Sensitivity & Specificity at the Youden-J cutoff (chosen on TRAIN, not 0.5)
-enet_cut <- youden_cutoff(relapse_pred_enet)
-enet_cut
-
-sens_spec_at(relapse_pred_enet, enet_cut)
-
-# Look at Model Metrics -----
+# Test Metrics --------
+# Divergence: last_fit fits on training split of data_split, evaluates on test.
 # last_fit() fits the final best model to the training set and evaluates the test
 # set. Default metrics (accuracy + roc_auc) are self-consistent, so the test
 # roc_auc reads correctly without any event_level tweak — same as the template.
@@ -144,6 +174,22 @@ enet_test_metrics <- test_metrics_from_lastfit(
   enet_last_fit, enet_cut, "Elastic net (ridge)"
 )
 
+# Review Fit on Test Data --------
+# collect_predictions(enet_last_fit) reuses the test-split predictions already
+# computed inside last_fit() above — identical to predict(enet_fit, test_data)
+# but avoids a redundant prediction call and keeps this plot consistent with the
+# scalar metrics derived from the same last_fit object.
+relapse_pred_enet_test <- collect_predictions(enet_last_fit)
+
+relapse_pred_enet_test |>
+  roc_curve(truth = outcome, .pred_1, event_level = "second") |>
+  autoplot() +
+  ggplot2::labs(
+    title    = "Elastic net (ridge): test ROC curve",
+    subtitle = "Held-out 25% test split; relapse as the positive class",
+    x = "1 - Specificity", y = "Sensitivity"
+  )
+
 # Look at Variable Importance ------
 # Here's where LASSO beats knn: the model IS its coefficients, so importance is
 # meaningful. vip() shows the largest |coefficients| at the selected penalty —
@@ -158,20 +204,6 @@ enet_fit |>
 enet_fit |>
   extract_fit_parsnip() |>
   tidy()
-
-# Review Fit on the Test Data ------ enriched 6/2
-relapse_pred_enet_test <-
-  predict(enet_fit, test_data, type = "prob") |>
-  bind_cols(test_data |> select(outcome))
-
-relapse_pred_enet_test |>
-  roc_curve(truth = outcome, .pred_1, event_level = "second") |>
-  autoplot() +
-  ggplot2::labs(
-    title    = "Elastic net (ridge): test ROC curve",
-    subtitle = "Held-out 25% test split; relapse as the positive class",
-    x = "1 - Specificity", y = "Sensitivity"
-  )
 
 
 # ── Pure LASSO ───────────────────────────────────────────────────────────────
@@ -197,26 +229,64 @@ lasso_grid <- grid_regular(penalty(), levels = 50)
 set.seed(12345)
 lasso_folds <- vfold_cv(train_data, v = 5, strata = outcome)
 
-lasso_cl <- makePSOCKcluster(parallel::detectCores() - 1)
-registerDoParallel(lasso_cl)
-lasso_tune <- tune_grid(
-  lasso_workflow,
-  resamples = lasso_folds,
-  grid      = lasso_grid
-)
-stopCluster(lasso_cl)
+lasso_cache <- here::here("vignettes/lasso_tune.rds")
+if (file.exists(lasso_cache)) {
+  lasso_tune <- readRDS(lasso_cache)
+} else {
+  lasso_cl <- makePSOCKcluster((if (nzchar(Sys.getenv("_R_CHECK_LIMIT_CORES_"))) 2L else max(1L, parallel::detectCores() - 1L)))
+  registerDoParallel(lasso_cl)
+  lasso_tune <- tune_grid(
+    lasso_workflow,
+    resamples = lasso_folds,
+    grid      = lasso_grid
+  )
+  stopCluster(lasso_cl)
+  saveRDS(lasso_tune, lasso_cache)
+}
+
+# select_by_one_std_err = the classic "lambda.1se" rule: take the SIMPLEST model
+# whose performance is within one standard error of the best. desc(penalty) tells
+# it that higher penalty = simpler (more shrinkage), so it leans toward sparser
+# models on purpose — fewer surviving coefficients, less overfitting.
+lasso_favorite <- select_by_one_std_err(lasso_tune, desc(penalty), metric = "roc_auc")
+# this outputs a 1-row tibble of penalty, .config
 
 # Model Fit --------
-lasso_favorite <- select_by_one_std_err(lasso_tune, desc(penalty), metric = "roc_auc")
-
 lasso_final_wf <- finalize_workflow(lasso_workflow, lasso_favorite)
 
 lasso_fit <- lasso_final_wf |> fit(data = train_data)
 
-# Review Fit on Training Data-----
+# CV Metrics --------
+# Divergence: tune_grid fit on 5-fold subsets of train_data (lasso_folds; each fold holds
+# out 1/5 for validation). The final model below is a fresh fit on ALL train_data.
+# mean = average of the 5 fold-level roc_auc .estimates tune_grid computed internally;
+# std_err = sd of those estimates / sqrt(5); n = 5.
+# sens/spec omitted here: not available from tune_grid without save_pred=TRUE.
+lasso_cv_metrics <- collect_metrics(lasso_tune) |>
+  dplyr::filter(.metric == "roc_auc", penalty == lasso_favorite$penalty) |>
+  dplyr::select(.metric, mean, std_err, n)
+lasso_cv_metrics
+
+# Train Metrics --------
+# Divergence: lasso_fit was trained on ALL of train_data (not CV folds).
+# relapse_pred_lasso is in-sample prediction on the same train_data — intentionally
+# optimistic, equivalent to Balise et al.'s "Full Training Dataset" column.
 relapse_pred_lasso <-
   predict(lasso_fit, train_data, type = "prob") |>
   bind_cols(train_data |> select(outcome))
+
+# Sensitivity & Specificity at the Youden-J cutoff (chosen on TRAIN, not 0.5)
+lasso_cut <- youden_cutoff(relapse_pred_lasso)
+lasso_cut
+
+lasso_train_metrics <- dplyr::bind_rows(
+  roc_auc(relapse_pred_lasso, truth = outcome, .pred_1, event_level = "second"),
+  sens_spec_at(relapse_pred_lasso, lasso_cut)
+) |> dplyr::select(.metric, .estimate)
+lasso_train_metrics
+
+# Review Fit on Training Data --------
+# Visualization of in-sample fit. relapse_pred_lasso and lasso_cut defined above.
 
 # ROC/AUC Plot (train) — enriched with title/labels. # enriched 6/2
 relapse_pred_lasso |>
@@ -228,27 +298,50 @@ relapse_pred_lasso |>
     x = "1 - Specificity", y = "Sensitivity"
   )
 
+# ROC/AUC Score table
+# roc_auc() returns the single auc number and has one row with .metric/.estimator/.estimate
+# roc_curve(), like below was before i changed, is the ugly table with everryyy pt
 relapse_pred_lasso |>
-  roc_auc(truth = outcome, .pred_1, event_level = "second")
+  roc_auc(
+    truth = outcome,
+    .pred_1,
+    event_level = "second"
+  )
 
-# Sensitivity & Specificity at the Youden-J cutoff (chosen on TRAIN, not 0.5)
-lasso_cut <- youden_cutoff(relapse_pred_lasso)
-lasso_cut
-
-sens_spec_at(relapse_pred_lasso, lasso_cut)
-
-# Look at Model Metrics -----
+# Test Metrics --------
+# Divergence: last_fit fits on training split of data_split, evaluates on test.
+# last_fit() fits the final best model to the training set and evaluates the test
+# set. Default metrics (accuracy + roc_auc) are self-consistent, so the test
+# roc_auc reads correctly without any event_level tweak — same as the template.
 lasso_last_fit <- lasso_final_wf |> last_fit(data_split)
 
+# accuracy and roc_auc on the held-out test set
 collect_metrics(lasso_last_fit)
 
-# Test sens + spec at the SAME train-chosen cutoff (choose on train, report on test)
+# Test sens + spec at the SAME train-chosen cutoff (choose on train, report on
+# test — never tuned on test). spec is the clinically important one here.
 sens_spec_at(collect_predictions(lasso_last_fit), lasso_cut)
 
 # Named metric tibble for the cross-method comparison table in analysis.qmd. # added 6/2
 lasso_test_metrics <- test_metrics_from_lastfit(
   lasso_last_fit, lasso_cut, "LASSO"
 )
+
+# Review Fit on Test Data --------
+# collect_predictions(lasso_last_fit) reuses the test-split predictions already
+# computed inside last_fit() above — identical to predict(lasso_fit, test_data)
+# but avoids a redundant prediction call and keeps this plot consistent with the
+# scalar metrics derived from the same last_fit object.
+relapse_pred_lasso_test <- collect_predictions(lasso_last_fit)
+
+relapse_pred_lasso_test |>
+  roc_curve(truth = outcome, .pred_1, event_level = "second") |>
+  autoplot() +
+  ggplot2::labs(
+    title    = "Pure LASSO: test ROC curve",
+    subtitle = "Held-out 25% test split; relapse as the positive class",
+    x = "1 - Specificity", y = "Sensitivity"
+  )
 
 # Look at Variable Importance ------
 # vip() does not pin to the workflow's selected penalty — it reads a different
@@ -272,21 +365,6 @@ ggplot(lasso_coef, aes(x = importance, y = reorder(term, importance))) +
   theme_minimal()
 
 lasso_coef   # raw coefficient table for the surviving terms
-
-# Review Fit on the Test Data ------
-relapse_pred_lasso_test <-
-  predict(lasso_fit, test_data, type = "prob") |>
-  bind_cols(test_data |> select(outcome))
-
-# enriched 6/2
-relapse_pred_lasso_test |>
-  roc_curve(truth = outcome, .pred_1, event_level = "second") |>
-  autoplot() +
-  ggplot2::labs(
-    title    = "Pure LASSO: test ROC curve",
-    subtitle = "Held-out 25% test split; relapse as the positive class",
-    x = "1 - Specificity", y = "Sensitivity"
-  )
 
 
 # ── Shrinkage Plots (given mixture settings) ─────────────────────────────────

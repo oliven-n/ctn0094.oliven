@@ -116,8 +116,41 @@ $font-family: "Helvetica", "Arial";
   h1, h2, h3, h4, h5, h6 {
     color: $miami-green;
   }
-  
+
   p, li, td {
     color: #333333; /* Default text color for regular content */
   }
+}
+
+/* Table styling — UM brand colors */
+.reveal table {
+  border-collapse: collapse;
+  margin: 0.4em auto;
+  font-size: 0.82em;
+}
+
+.reveal table th {
+  background-color: $miami-orange;
+  color: #ffffff;
+  font-weight: bold;
+  padding: 6px 14px;
+  border: 1px solid darken($miami-orange, 12%);
+  text-align: center;
+}
+
+.reveal table td {
+  padding: 5px 14px;
+  border: 1px solid #C8C9C7;
+  color: #333333;
+}
+
+.reveal table tr:nth-child(even) td {
+  background-color: rgba(0, 80, 48, 0.07);
+}
+
+/* ggplot figures: subtle orange bottom border */
+.reveal .cell-output-display img,
+.reveal .cell figure img {
+  border-bottom: 3px solid $miami-orange;
+  border-radius: 2px;
 }

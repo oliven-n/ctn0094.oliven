@@ -33,13 +33,16 @@ the_folds <- vfold_cv(train_data, v = 5, strata = outcome)
 
 # tune_grid returns a tibble where each row is a resample x hyperparam combo,
 # with a .metrics list column
-cl <- makePSOCKcluster(parallel::detectCores() - 1)
-registerDoParallel(cl)
-kknn_tune <- tune_grid(kknn_workflow, resamples = the_folds, grid = knn_grid)
-stopCluster(cl)
-
-
-# Model Fit --------
+knn_tune_cache <- here::here("vignettes/knn_tune.rds")
+if (file.exists(knn_tune_cache)) {
+  kknn_tune <- readRDS(knn_tune_cache)
+} else {
+  cl <- makePSOCKcluster((if (nzchar(Sys.getenv("_R_CHECK_LIMIT_CORES_"))) 2L else max(1L, parallel::detectCores() - 1L)))
+  registerDoParallel(cl)
+  kknn_tune <- tune_grid(kknn_workflow, resamples = the_folds, grid = knn_grid)
+  stopCluster(cl)
+  saveRDS(kknn_tune, knn_tune_cache)
+}
 
 # the shrinkage estiamte (selecting k)
 # more k, more shrinkage
@@ -48,15 +51,41 @@ stopCluster(cl)
 favorite <- select_by_one_std_err(kknn_tune, neighbors, metric = "roc_auc")
 # this outputs a 1x2 tibble of neighbors,.config
 
-
+# Model Fit --------
 final_wf <- finalize_workflow(kknn_workflow, favorite)
 
 knn_fit <- final_wf |> fit(data=train_data)
 
-# Review Fit on Training Data-----
+# CV Metrics --------
+# Divergence: tune_grid fit on 5-fold subsets of train_data (each fold holds out
+# 1/5 for validation). The final model below is a fresh fit on ALL train_data.
+# mean = average of the 5 fold-level roc_auc .estimates tune_grid computed internally;
+# std_err = sd of those estimates / sqrt(5); n = 5.
+# sens/spec omitted here: not available from tune_grid without save_pred=TRUE.
+knn_cv_metrics <- collect_metrics(kknn_tune) |>
+  dplyr::filter(.metric == "roc_auc", neighbors == favorite$neighbors) |>
+  dplyr::select(.metric, mean, std_err, n)
+knn_cv_metrics
+
+# Train Metrics --------
+# Divergence: knn_fit was trained on ALL of train_data (not CV folds).
+# relapse_pred_knn is in-sample prediction on the same train_data — intentionally
+# optimistic, equivalent to Balise et al.'s "Full Training Dataset" column.
 relapse_pred_knn <-
   predict(knn_fit, train_data, type = "prob") |>
   bind_cols(train_data |> select(outcome))
+
+knn_cut <- youden_cutoff(relapse_pred_knn)
+knn_cut
+
+knn_train_metrics <- dplyr::bind_rows(
+  roc_auc(relapse_pred_knn, truth = outcome, .pred_1, event_level = "second"),
+  sens_spec_at(relapse_pred_knn, knn_cut)
+) |> dplyr::select(.metric, .estimate)
+knn_train_metrics
+
+# Review Fit on Training Data --------
+# Visualization of in-sample fit. relapse_pred_knn and knn_cut defined above.
 
 # ROC/AUC Plot (train) — enriched with title/labels. # enriched 6/2
 relapse_pred_knn |>
@@ -76,13 +105,9 @@ relapse_pred_knn |>
     event_level = "second"
   )
 
-# Sensitivity & Specificity at the Youden-J cutoff (chosen on TRAIN, not 0.5),
-# matching logistic_enet.R so analysis.qmd reports a consistent operating point.
-knn_cut <- youden_cutoff(relapse_pred_knn)
-knn_cut
-
-sens_spec_at(relapse_pred_knn, knn_cut)
-# Look at Model Metrics -----
+# Test Metrics --------
+# Divergence: last_fit fits on the training split of data_split, evaluates on
+# the held-out 25% test split. Youden-J cutoff chosen on train_data, applied here.
 
 # last_fit() fits the final best model to the training set and evaluates the test set
 knn_last_fit <- final_wf |> last_fit(data_split)
@@ -98,6 +123,23 @@ knn_test_metrics <- test_metrics_from_lastfit(
   knn_last_fit, knn_cut, "KNN"
 )
 
+# Review Fit on Test Data --------
+# collect_predictions(knn_last_fit) reuses the test-split predictions already
+# computed inside last_fit() above — identical to predict(knn_fit, test_data)
+# but avoids a redundant prediction call and keeps this plot consistent with the
+# scalar metrics derived from the same last_fit object.
+relapse_pred_knn_test <- collect_predictions(knn_last_fit)
+
+# enriched 6/2
+relapse_pred_knn_test |>
+  roc_curve(truth = outcome, .pred_1, event_level = "second") |>
+  autoplot() +
+  ggplot2::labs(
+    title    = "KNN: test ROC curve",
+    subtitle = "Held-out 25% test split; relapse as the positive class",
+    x = "1 - Specificity", y = "Sensitivity"
+  )
+
 # Look at Variable Importance ------
 # KNN has no intrinsic coefficients, so we use model-agnostic PERMUTATION
 # importance: shuffle one predictor at a time and measure the drop in test ROC
@@ -110,25 +152,31 @@ knn_auc_metric <- function(truth, estimate) {
   yardstick::roc_auc_vec(truth = truth, estimate = estimate, event_level = "second")
 }
 
-cl <- makePSOCKcluster(parallel::detectCores() - 1)
-registerDoParallel(cl)
-set.seed(12345)
-knn_vip_obj <- vip::vi_permute(
-  object        = knn_fit,                                  # the fitted workflow
-  feature_names = setdiff(names(train_data), c("who", "outcome")),
-  train         = train_data,
-  target        = "outcome",
-  metric        = knn_auc_metric,
-  smaller_is_better = FALSE,
-  pred_wrapper  = function(object, newdata) {
-    # vip subsets newdata to feature_names, dropping the `who` ID column the
-    # recipe needs; re-add a dummy (who has role "ID", so it never affects preds).
-    if (!"who" %in% names(newdata)) newdata$who <- 1L
-    predict(object, newdata, type = "prob")$.pred_1
-  },
-  nsim = 10
-)
-stopCluster(cl)
+knn_vip_cache <- here::here("vignettes/knn_vip.rds")
+if (file.exists(knn_vip_cache)) {
+  knn_vip_obj <- readRDS(knn_vip_cache)
+} else {
+  cl <- makePSOCKcluster((if (nzchar(Sys.getenv("_R_CHECK_LIMIT_CORES_"))) 2L else max(1L, parallel::detectCores() - 1L)))
+  registerDoParallel(cl)
+  set.seed(12345)
+  knn_vip_obj <- vip::vi_permute(
+    object        = knn_fit,                                  # the fitted workflow
+    feature_names = setdiff(names(train_data), c("who", "outcome")),
+    train         = train_data,
+    target        = "outcome",
+    metric        = knn_auc_metric,
+    smaller_is_better = FALSE,
+    pred_wrapper  = function(object, newdata) {
+      # vip subsets newdata to feature_names, dropping the `who` ID column the
+      # recipe needs; re-add a dummy (who has role "ID", so it never affects preds).
+      if (!"who" %in% names(newdata)) newdata$who <- 1L
+      predict(object, newdata, type = "prob")$.pred_1
+    },
+    nsim = 10
+  )
+  stopCluster(cl)
+  saveRDS(knn_vip_obj, knn_vip_cache)
+}
 
 # VIP plot (top 15), enriched with title/axis/description. # added 6/2
 vip::vip(knn_vip_obj, num_features = 15, geom = "col") +
@@ -139,20 +187,4 @@ vip::vip(knn_vip_obj, num_features = 15, geom = "col") +
     y        = NULL
   ) +
   ggplot2::theme_minimal(base_size = 11)
-
-# Review Fit on the Test Data ------
-
-relapse_pred_knn_test <-
-  predict(knn_fit, test_data, type = "prob") |>
-  bind_cols(test_data |> select(outcome))
-
-# enriched 6/2
-relapse_pred_knn_test |>
-  roc_curve(truth = outcome, .pred_1, event_level = "second") |>
-  autoplot() +
-  ggplot2::labs(
-    title    = "KNN: test ROC curve",
-    subtitle = "Held-out 25% test split; relapse as the positive class",
-    x = "1 - Specificity", y = "Sensitivity"
-  )
 

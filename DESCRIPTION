@@ -2,7 +2,7 @@ Package: ctn0094.oliven
 Title: Analysis of CTN-0094 Data
 Version: 0.0.0.9000
 Authors@R: 
-    person("Nat", "Oliven", , "oliven@umich.edu", role = c("aut", "cre"), comment = c(ORCID = "fill_in"))
+    person("Nat", "Oliven", , "oliven@umich.edu", role = c("aut", "cre"), comment = c(ORCID = "0009-0005-2359-319X"))
 Description: This is an analysis that predicts treatment response for people undergoing care for Opioid Use Disorder (OUD).
 License: file LICENSE
 Encoding: UTF-8
@@ -12,6 +12,7 @@ Suggests:
     conflicted,
     CTNote,
     dplyr,
+    ggplot2,
     glue,
     gtsummary (>= 2.0.3),
     here,
@@ -31,7 +32,10 @@ Suggests:
     digest, 
     kknn,
     vip,
-    xfun
+    xfun,
+    rpart.plot,
+    ranger,
+    xgboost
 VignetteBuilder: quarto
 Depends: 
     R (>= 3.5)

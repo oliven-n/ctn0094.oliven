@@ -3,7 +3,7 @@
 # K-fold cross-validated logistic regression using the without-problem-variables
 # recipe. Sourced by analysis.qmd after logistic_regression_without_problem_vars.R.
 library(doParallel)
-cl <- makePSOCKcluster(parallel::detectCores() - 1)
+cl <- makePSOCKcluster((if (nzchar(Sys.getenv("_R_CHECK_LIMIT_CORES_"))) 2L else max(1L, parallel::detectCores() - 1L)))
 registerDoParallel(cl)
 
 if (!exists("lr_workflow_wopv")) {
@@ -31,12 +31,18 @@ class_metrics <- metric_set(accuracy, roc_auc)
 # fit (fit means train on data) resamples
 #fit_resamples() is for performance estimation only
 # tune_grid() is for finding the best hyperparams (we dont need that here)
-rs_results <- lr_workflow_wopv |>
-  fit_resamples(
-    resamples = folds,
-    metrics   = class_metrics,
-    control   = control_resamples(save_pred = TRUE)
-  )
+lr_kfold_cache <- here::here("vignettes/lr_kfold_rs.rds")
+if (file.exists(lr_kfold_cache)) {
+  rs_results <- readRDS(lr_kfold_cache)
+} else {
+  rs_results <- lr_workflow_wopv |>
+    fit_resamples(
+      resamples = folds,
+      metrics   = class_metrics,
+      control   = control_resamples(save_pred = TRUE)
+    )
+  saveRDS(rs_results, lr_kfold_cache)
+}
 
 stopCluster(cl)
 
