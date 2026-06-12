@@ -488,6 +488,10 @@ randfor_test_auc  <- randfor_test_metrics$.estimate[randfor_test_metrics$.metric
 xgboost_cv_auc    <- xgboost_cv_metrics$mean[xgboost_cv_metrics$.metric == "roc_auc"]
 xgboost_train_auc <- xgboost_train_metrics$.estimate[xgboost_train_metrics$.metric == "roc_auc"]
 xgboost_test_auc  <- xgboost_test_metrics$.estimate[xgboost_test_metrics$.metric == "roc_auc"]
+# Read from named objects in tabpfn.R.
+tabpfn_cv_auc    <- tabpfn_cv_metrics$mean[tabpfn_cv_metrics$.metric == "roc_auc"]
+tabpfn_train_auc <- tabpfn_train_metrics$.estimate[tabpfn_train_metrics$.metric == "roc_auc"]
+tabpfn_test_auc  <- tabpfn_test_metrics$.estimate[tabpfn_test_metrics$.metric == "roc_auc"]
 lr_cv_auc <- lr_cv_test_metrics$.estimate[lr_cv_test_metrics$.metric == "roc_auc"]
 
 # Full training AUC (in-sample, on all training data after final fit)
@@ -511,7 +515,8 @@ tibble::tribble(
   "KNN (no problem vars)",         round(knn_wopv_cv_auc, 3),  round(knn_wopv_train_auc, 3), knn_wopv_test_auc,
   "CART",                          round(cart_cv_auc, 3),      round(cart_train_auc, 3),     cart_test_auc,
   "Random Forest",                 round(randfor_cv_auc, 3),   round(randfor_train_auc, 3),  randfor_test_auc,
-  "XGBoost",                       round(xgboost_cv_auc, 3),   round(xgboost_train_auc, 3),  xgboost_test_auc
+  "XGBoost",                       round(xgboost_cv_auc, 3),   round(xgboost_train_auc, 3),  xgboost_test_auc,
+  "TabPFN",                        round(tabpfn_cv_auc, 3),    round(tabpfn_train_auc, 3),   tabpfn_test_auc
 ) |>
   kable(
     digits    = 3,
