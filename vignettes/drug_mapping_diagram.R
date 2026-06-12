@@ -386,23 +386,25 @@ extra_grouped_arrows <- bind_rows(
 key_x_left  <- col_x["tlfb"] + box_w + 3       # left edge of key box
 key_x_dot   <- key_x_left + 0.5                 # dot center x
 key_x_txt   <- key_x_left + 1.5                 # label text start x
-key_y_title <- box_top - 1.5                    # "Key" title y
-key_y0      <- box_top - 3.0                    # first legend entry y
-key_yd      <- 1.25                             # vertical spacing between entries
-key_y_note  <- key_y0 - length(REL_COLORS) * key_yd   # asterisk note y
-key_x_right <- key_x_left + 13                  # right edge of key box
-key_y_bot   <- key_y_note - 1.5                 # bottom of key box
+key_x_right <- key_x_left + 18                  # right edge (wide enough to prevent overflow)
 
-# same: white bullet w/ black border (tlfb drugs inherit adf colors — no single hue)
-# tlfb_grouped / tlfb_finer / partial: matching TLFB_TEXT_COLORS grays
-# tlfb_only: black
+tab_h       <- 1.8                              # blue header tab height
+key_tab_top <- box_top - 0.5                    # top of entire key box
+key_tab_bot <- key_tab_top - tab_h              # bottom of blue tab / top of white area
+key_y0      <- key_tab_bot - 0.8               # first legend entry y
+key_yd      <- 1.6                              # spacing (leaves room for 2-line labels)
+key_y_note  <- key_y0 - length(REL_COLORS) * key_yd   # asterisk note y
+key_y_bot   <- key_y_note - 1.5                # bottom of key box
+
+# same: gradient-filled circle (drawn separately below)
+# tlfb_grouped / tlfb_finer / partial: matching TLFB_TEXT_COLORS grays; tlfb_only: black
 legend_df <- tibble(
   rel_type = names(REL_COLORS),
   label = c(
     "same: same drugs, same name",
     "tlfb_grouped: tlfb lumps adf categories",
     "tlfb_finer: tlfb more specific than adf",
-    "partial: near match with grouping/ungrouping inconsistencies",
+    "partial: near match with grouping/\nungrouping inconsistencies",
     "tlfb_only {black}: no adf counterpart"
   ),
   text_col   = c("black",  TLFB_TEXT_COLORS["tlfb_grouped"], TLFB_TEXT_COLORS["tlfb_finer"],
@@ -416,11 +418,42 @@ legend_df <- tibble(
   y = key_y0 - (seq_len(length(REL_COLORS)) - 1) * key_yd
 )
 
-key_box <- rounded_rect(key_x_left, key_y_bot, key_x_right, box_top - 0.5,
-                        r = 0.5, group = "key_box")
-key_title_df <- tibble(x = (key_x_left + key_x_right) / 2, y = key_y_title, label = "Key")
-key_note_df  <- tibble(x = key_x_txt, y = key_y_note,
-                       label = "* = opioid kept separate from Opioid group")
+# Key box: square-cornered, white fill, black border
+key_box_df <- tibble(
+  x = c(key_x_left, key_x_right, key_x_right, key_x_left, key_x_left),
+  y = c(key_y_bot,  key_y_bot,   key_tab_top,  key_tab_top,  key_y_bot),
+  group = "key_box"
+)
+# Blue header tab polygon (top band of key box)
+key_tab_df <- tibble(
+  x = c(key_x_left, key_x_right, key_x_right, key_x_left, key_x_left),
+  y = c(key_tab_bot, key_tab_bot, key_tab_top, key_tab_top, key_tab_bot),
+  group = "key_tab"
+)
+key_title_df <- tibble(
+  x = (key_x_left + key_x_right) / 2,
+  y = (key_tab_bot + key_tab_top) / 2,
+  label = "Key"
+)
+key_note_df <- tibble(
+  x = key_x_txt, y = key_y_note,
+  label = "* = opioid kept separate from Opioid group"
+)
+
+# Gradient circle for "same" legend entry (pink center → blue edge)
+dot_r          <- 0.35
+theta_seq      <- seq(0, 2 * pi, length.out = 65)
+grad_dot_df    <- tibble(
+  x = key_x_dot + dot_r * cos(theta_seq),
+  y = legend_df$y[1] + dot_r * sin(theta_seq),
+  group = "grad_dot"
+)
+pink_blue_grad <- grid::radialGradient(
+  colours = c("deeppink", "mediumpurple", "royalblue"),
+  stops   = c(0, 0.5, 1),
+  cx1 = 0.5, cy1 = 0.5, r1 = 0,
+  cx2 = 0.5, cy2 = 0.5, r2 = 0.5
+)
 
 # ---- OVERFLOW GUARDS ----
 char_w   <- 0.16                          # approx data-units per char at base_size 11
@@ -520,17 +553,30 @@ p <- ggplot() +
             hjust = 0, size = 3.1, family = "Courier", fontface = "bold") +
   geom_text(data = titles_df, aes(x, y, label = label),
             size = 5.5, fontface = "bold") +
-  # Key box (to right of tlfb panel) with title
-  geom_polygon(data = key_box, aes(x, y, group = group),
-               fill = "#FFF4DC", color = "black", linewidth = 0.6) +
+  # Key box: white fill, black border, square corners
+  geom_polygon(data = key_box_df, aes(x, y, group = group),
+               fill = "white", color = NA) +
+  # Blue header tab
+  geom_polygon(data = key_tab_df, aes(x, y, group = group),
+               fill = "#2E5FAC", color = NA) +
+  # Black outer border (drawn on top so it overlays both white box and blue tab)
+  geom_polygon(data = key_box_df, aes(x, y, group = group),
+               fill = NA, color = "black", linewidth = 0.8) +
+  geom_segment(aes(x = key_x_left, xend = key_x_right,
+                   y = key_tab_bot,  yend = key_tab_bot),
+               color = "black", linewidth = 0.8) +
+  # "Key" label in white on blue tab
   geom_text(data = key_title_df, aes(x, y, label = label),
-            size = 4.5, fontface = "bold") +
-  # Legend — shape 21 for "same" (white fill + black border), 19 for the rest
-  geom_point(data = legend_df,
+            size = 4.5, fontface = "bold", color = "white") +
+  # Gradient circle for "same" entry
+  geom_polygon(data = grad_dot_df, aes(x, y, group = group),
+               fill = pink_blue_grad, color = "black", linewidth = 0.4) +
+  # Legend dots for non-"same" entries
+  geom_point(data = legend_df |> filter(rel_type != "same"),
              aes(x, y, color = I(border_col), fill = I(fill_col), shape = I(pt_shape)),
              size = 2.5) +
   geom_text(data = legend_df, aes(x + 1, y, label = label, color = I(text_col)),
-            hjust = 0, size = 2.6, family = "Courier") +
+            hjust = 0, size = 2.6, family = "Courier", lineheight = 0.85) +
   # Key asterisk note
   geom_text(data = key_note_df, aes(x, y, label = label),
             hjust = 0, size = 2.4, family = "Courier", color = "black") +
