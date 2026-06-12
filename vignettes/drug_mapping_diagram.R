@@ -248,45 +248,120 @@ tlfb_pos <- tlfb_drugs |>
   left_join(tlfb_rel, by = "what") |>
   mutate(rel_color = REL_COLORS[rel_type])
 
+# ---- tlfb positions ----
+# Category-aligned entries (same, tlfb_grouped, tlfb_finer, partial — where align_cat set)
 aligned_y <- filt_rows |> select(what_grouped, fy = y)
 tlfb_aligned <- tlfb_pos |>
   filter(!is.na(align_cat)) |>
   left_join(aligned_y, by = c("align_cat" = "what_grouped")) |>
-  arrange(align_cat, desc(events)) |>           # within group, higher-event entry is first
+  arrange(align_cat, desc(events)) |>
   group_by(align_cat) |>
-  mutate(y = fy - (row_number() - 1L) * dy) |> # first entry at fy, next at fy-1, etc.
+  mutate(y = fy - (row_number() - 1L) * dy) |>
   ungroup()
 
-used_y  <- sort(unique(tlfb_aligned$y), decreasing = TRUE)
+# tlfb_only drugs that correspond to axed all_drugs categories → align with ad_rows y
+# tlfb "Antidepressant" spans two source drugs; use their mean y
+tlfb_only_raw_map <- c(       # tlfb name -> raw all_drugs name
+  Antibiotic       = "Antibiotic",
+  Antihistamine    = "Antihistamine",
+  Antipsychotic    = "Antipsychotic",
+  Cathinones       = "Cathinones",
+  Inhalant         = "Inhalant",
+  Methylphenidate  = "Methylphenidate",
+  Unknown          = "Unknown"
+)
+antidep_y <- mean(ad_rows$y[ad_rows$what %in% c("Trazodone", "Tryclic-Antidepressant")])
+
+axed_align_y <- ad_rows |>
+  filter(what %in% tlfb_only_raw_map) |>
+  select(raw = what, y) |>
+  mutate(what = names(tlfb_only_raw_map)[match(raw, tlfb_only_raw_map)]) |>
+  select(what, y) |>
+  bind_rows(tibble(what = "Antidepressant", y = antidep_y))
+
+tlfb_only_all <- tlfb_pos |> filter(rel_type == "tlfb_only")
+tlfb_only_axed <- tlfb_only_all |>
+  inner_join(axed_align_y, by = "what")
+tlfb_only_free_pool <- tlfb_only_all |>
+  filter(!what %in% axed_align_y$what)
+
+# free_y: row positions not taken by any aligned or axed-aligned entry
+used_y  <- sort(unique(round(c(tlfb_aligned$y, tlfb_only_axed$y), 6)), decreasing = TRUE)
 all_y   <- row_y(seq_len(n_rows))
-free_y  <- sort(setdiff(round(all_y, 6), round(used_y, 6)), decreasing = TRUE)
+free_y  <- sort(setdiff(round(all_y, 6), used_y), decreasing = TRUE)
 
 stopifnot("more unaligned tlfb rows than free y-positions" =
-            sum(is.na(tlfb_pos$align_cat)) <= length(free_y))
-tlfb_unaligned <- tlfb_pos |>
-  filter(is.na(align_cat)) |>
+            nrow(tlfb_only_free_pool) <= length(free_y))
+tlfb_only_free <- tlfb_only_free_pool |>
   mutate(y = free_y[seq_len(n())])
 
-tlfb_rows <- bind_rows(tlfb_aligned, tlfb_unaligned) |>
+tlfb_rows <- bind_rows(tlfb_aligned, tlfb_only_axed, tlfb_only_free) |>
   mutate(x = col_x["tlfb"] + pad_x)
 
 stopifnot(nrow(tlfb_rows) == 25L,
           all(!is.na(tlfb_rows$rel_type)),
           all(tlfb_rows$rel_type %in% names(REL_COLORS)))
 cat("Task 4: tlfb relationship-type checks PASSED — ",
-    nrow(tlfb_aligned), " aligned, ", nrow(tlfb_unaligned), " unaligned\n", sep = "")
+    nrow(tlfb_aligned), " aligned, ", nrow(tlfb_only_axed), " axed-aligned, ",
+    nrow(tlfb_only_free), " free\n", sep = "")
 
-# ---- two-way arrows between tlfb and adf (aligned pairs only) ----
-tlfb_arrows <- tlfb_rows |>
-  filter(!is.na(align_cat)) |>
+# ---- arrow system: tlfb <-> adf and extra cross-category arrows ----
+
+# Helper: left edge of adf filtered box (arrow start) and tlfb box (arrow end)
+ADF_R  <- col_x["filtered"] + box_w + 1.1   # right of filtered panel
+TLFB_L <- col_x["tlfb"] - 1.1               # left of tlfb panel
+
+# 1. Two-way for "same" rel_type only
+tlfb_arrows_both <- tlfb_rows |>
+  filter(!is.na(align_cat), rel_type == "same") |>
   left_join(filt_rows |> select(what_grouped, adf_y = y),
             by = c("align_cat" = "what_grouped")) |>
-  transmute(
-    x    = col_x["tlfb"] - 1.1,
-    xend = col_x["filtered"] + box_w + 1.1,
-    y    = y,
-    yend = adf_y
-  )
+  transmute(x = TLFB_L, xend = ADF_R, y = y, yend = adf_y)
+
+# 2. One-way (adf → tlfb) for non-same aligned entries, excluding tlfb "Alcohol"
+#    (Alcohol gets three explicit arrows below; tlfb_only has no arrows)
+tlfb_arrows_one <- tlfb_rows |>
+  filter(!is.na(align_cat),
+         !rel_type %in% c("same", "tlfb_only"),
+         what != "Alcohol") |>
+  left_join(filt_rows |> select(what_grouped, adf_y = y),
+            by = c("align_cat" = "what_grouped")) |>
+  transmute(x = ADF_R, xend = TLFB_L, y = adf_y, yend = y)
+
+# 3. Extra partial arrows: adf Fentanyl and Suboxone → tlfb Opioid
+opioid_tlfb_y <- tlfb_rows$y[tlfb_rows$what == "Opioid"]
+stopifnot(length(opioid_tlfb_y) == 1L)
+extra_partial_arrows <- filt_rows |>
+  filter(what_grouped %in% c("Fentanyl", "Suboxone")) |>
+  transmute(x = ADF_R, xend = TLFB_L, y = y, yend = opioid_tlfb_y)
+
+# 4. Alcohol: three one-way arrows from each adf alcohol category → tlfb Alcohol
+alcohol_tlfb_y <- tlfb_rows$y[tlfb_rows$what == "Alcohol"]
+stopifnot(length(alcohol_tlfb_y) == 1L)
+alcohol_arrows <- filt_rows |>
+  filter(what_grouped %in% c("Alcohol Heavy Amnt", "Alcohol Light Amnt", "Alcohol Missing Amnt")) |>
+  transmute(x = ADF_R, xend = TLFB_L, y = y, yend = alcohol_tlfb_y)
+
+# 5. Opium dotted arrow: adf Heroin → tlfb Opioid
+heroin_adf_y <- filt_rows$y[filt_rows$what_grouped == "Heroin"]
+stopifnot(length(heroin_adf_y) == 1L)
+opium_arrow <- tibble(
+  x = ADF_R, xend = TLFB_L,
+  y = heroin_adf_y, yend = opioid_tlfb_y,
+  mid_x = (ADF_R + TLFB_L) / 2,
+  mid_y = (heroin_adf_y + opioid_tlfb_y) / 2
+)
+
+# 6. Extra grouped arrows: adf Crack → tlfb Cocaine, adf Methamphetamine → tlfb Amphetamine
+cocaine_tlfb_y <- tlfb_rows$y[tlfb_rows$what == "Cocaine"]
+amphet_tlfb_y  <- tlfb_rows$y[tlfb_rows$what == "Amphetamine"]
+stopifnot(length(cocaine_tlfb_y) == 1L, length(amphet_tlfb_y) == 1L)
+extra_grouped_arrows <- bind_rows(
+  filt_rows |> filter(what_grouped == "Crack") |>
+    transmute(x = ADF_R, xend = TLFB_L, y = y, yend = cocaine_tlfb_y),
+  filt_rows |> filter(what_grouped == "Methamphetamine") |>
+    transmute(x = ADF_R, xend = TLFB_L, y = y, yend = amphet_tlfb_y)
+)
 
 # ---- legend ----
 legend_df <- tibble(
@@ -295,8 +370,8 @@ legend_df <- tibble(
     "same: same drugs, same name",
     "tlfb_grouped: tlfb lumps adf categories",
     "tlfb_finer: tlfb more specific than adf",
-    "partial: same name, different drugs",
-    "tlfb_only: no adf counterpart"
+    "partial: near match with grouping/ungrouping inconsistencies",
+    "tlfb_only {black}: no adf counterpart"
   ),
   color = unname(REL_COLORS),
   x = col_x["tlfb"] - 1,
@@ -343,17 +418,50 @@ titles_df <- tibble(
 )
 
 p <- ggplot() +
+  # Panel backgrounds
   geom_polygon(data = panels, aes(x, y, group = group),
                fill = "#FFF4DC", color = "black", linewidth = 0.8) +
+  # Highlight boxes (multi-source groups in all_drugs)
   geom_polygon(data = hl_poly, aes(x, y, group = group, color = I(color), fill = I(fill_color)),
                linewidth = 0.9) +
+  # Arrows: highlight box → filtered label
   geom_segment(data = arrows_df, aes(x = x, y = y, xend = xend, yend = yend),
                arrow = arrow(length = unit(0.18, "cm"), type = "closed"),
                linewidth = 0.6, color = "grey20") +
-  geom_segment(data = tlfb_arrows,
+  # Arrows: tlfb ↔ adf (two-way, same rel_type only)
+  geom_segment(data = tlfb_arrows_both,
                aes(x = x, y = y, xend = xend, yend = yend),
                arrow = arrow(ends = "both", length = unit(0.15, "cm"), type = "closed"),
+               linewidth = 0.5, color = REL_COLORS["same"]) +
+  # Arrows: adf → tlfb (one-way, non-same aligned entries)
+  geom_segment(data = tlfb_arrows_one,
+               aes(x = x, y = y, xend = xend, yend = yend),
+               arrow = arrow(ends = "last", length = unit(0.15, "cm"), type = "closed"),
                linewidth = 0.5, color = "grey30") +
+  # Extra partial arrows: adf Fentanyl/Suboxone → tlfb Opioid
+  geom_segment(data = extra_partial_arrows,
+               aes(x = x, y = y, xend = xend, yend = yend),
+               arrow = arrow(ends = "last", length = unit(0.15, "cm"), type = "closed"),
+               linewidth = 0.5, color = REL_COLORS["partial"]) +
+  # Extra grouped arrows: adf Crack/Methamphetamine → their tlfb targets
+  geom_segment(data = extra_grouped_arrows,
+               aes(x = x, y = y, xend = xend, yend = yend),
+               arrow = arrow(ends = "last", length = unit(0.15, "cm"), type = "closed"),
+               linewidth = 0.5, color = REL_COLORS["tlfb_grouped"]) +
+  # Alcohol arrows: three adf categories → tlfb Alcohol
+  geom_segment(data = alcohol_arrows,
+               aes(x = x, y = y, xend = xend, yend = yend),
+               arrow = arrow(ends = "last", length = unit(0.15, "cm"), type = "closed"),
+               linewidth = 0.5, color = REL_COLORS["tlfb_grouped"]) +
+  # Opium dotted arrow: adf Heroin → tlfb Opioid
+  geom_segment(data = opium_arrow,
+               aes(x = x, y = y, xend = xend, yend = yend),
+               arrow = arrow(ends = "last", length = unit(0.15, "cm"), type = "closed"),
+               linetype = "dashed", linewidth = 0.5, color = "grey40") +
+  geom_text(data = opium_arrow,
+            aes(x = mid_x, y = mid_y + 0.35, label = "(Opium)"),
+            size = 2.4, family = "Courier", color = "grey30") +
+  # Drug name labels: all_drugs (left), filtered (middle), tlfb (right)
   geom_text(data = ad_rows,
             aes(x, y, label = label, color = I(text_color)),
             hjust = 0, size = 3.1, family = "Courier", fontface = "bold") +
@@ -363,6 +471,7 @@ p <- ggplot() +
             hjust = 0, size = 3.1, family = "Courier", fontface = "bold") +
   geom_text(data = titles_df, aes(x, y, label = label),
             size = 5.5, fontface = "bold") +
+  # Legend
   geom_point(data = legend_df, aes(x, y, color = I(color)), size = 2.5) +
   geom_text(data = legend_df, aes(x + 0.5, y, label = label, color = I(color)),
             hjust = 0, size = 2.6, family = "Courier") +
