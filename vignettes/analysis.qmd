@@ -126,6 +126,13 @@ source("random_forest.R")
 source("xgboost.R")
 ```
 
+```{r tabpfn}
+#| include: false
+#| cache: true
+#| cache-extra: !expr list(digest::digest(readLines("tabpfn.R")), file.mtime("tabpfn_cv.rds"), file.mtime("tabpfn_vip.rds"))
+source("tabpfn.R")
+```
+
 ```{r precompute-captions}
 #| include: false
 # Pre-compute captions that contain inline R calculations (commas inside
@@ -167,6 +174,7 @@ cap_vip_knn    <- "K-nearest-neighbors (kknn engine) permutation variable import
 cap_vip_cart   <- "CART (rpart engine) variable importance for relapse prediction among CTN-0027/0030/0051 participants (2006-2016): native impurity-based importance, measured as the mean decrease in node impurity weighted by the number of training samples reaching each split."
 cap_vip_randfor <- "Random forest (ranger engine) variable importance for relapse prediction among CTN-0027/0030/0051 participants (2006-2016): native impurity-based importance, the mean decrease in Gini impurity attributable to each predictor averaged across 1,000 trees."
 cap_vip_xgboost <- "XGBoost (xgboost engine) variable importance for relapse prediction among CTN-0027/0030/0051 participants (2006-2016): native gain-based importance, the mean improvement in training loss contributed by each predictor across all splits where it is used."
+cap_vip_tabpfn  <- "TabPFN (pretrained transformer) permutation variable importance for relapse prediction among CTN-0027/0030/0051 participants (2006-2016): mean decrease in test ROC AUC when each predictor is shuffled (1 permutation)."
 ```
 
 # Abstract
