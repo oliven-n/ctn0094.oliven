@@ -44,7 +44,25 @@ suppressPackageStartupMessages(library(tidyverse))
 library(knitr)
 conflicts_prefer(dplyr::filter)
 options(dplyr.summarise.inform = FALSE)
+```
 
+```{r load-data}
+#| include: false
+#| cache: true
+#| cache-extra: !expr list(
+#|   file.mtime("../../vignettes/lr_kfold_rs.rds"),
+#|   file.mtime("../../vignettes/knn_tune.rds"),
+#|   file.mtime("../../vignettes/knn_vip.rds"),
+#|   file.mtime("../../vignettes/knn_wopv_tune.rds"),
+#|   file.mtime("../../vignettes/knn_wopv_vip.rds"),
+#|   file.mtime("../../vignettes/enet_tune.rds"),
+#|   file.mtime("../../vignettes/lasso_tune.rds"),
+#|   file.mtime("../../vignettes/cart_tune.rds"),
+#|   file.mtime("../../vignettes/randfor_tune.rds"),
+#|   file.mtime("../../vignettes/xgboost_tune.rds"),
+#|   file.mtime("../../vignettes/tabpfn_cv.rds"),
+#|   file.mtime("../../vignettes/tabpfn_vip.rds")
+#| )
 source("../../vignettes/building_analysis.R")
 source("../../vignettes/logistic_regression.R")
 source("../../vignettes/logistic_regression_without_problem_vars.R")
