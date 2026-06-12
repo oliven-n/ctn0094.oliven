@@ -195,18 +195,16 @@ Three NIDA Clinical Trials Network randomized controlled trials, harmonized in `
 
 ## Substance Use: Drug Aggregation
 
-:::: {.columns}
-::: {.column width="65%"}
-![](../../vignettes/figures/drug_mapping_diagram_nokey.png){width=100%}
-:::
-::: {.column width="35%" style="font-size:0.65em; padding-left:0.5em; line-height:1.6;"}
-1. Sparse (≤10 events) → dropped
-2. Distinct opioids kept separate
-3. Related sparse drugs merged
-4. Alcohol subcategories kept
-5. Per-drug: `_days`, `_binary`, `_streak`
-:::
-::::
+<div style="display:flex; flex-direction:row; align-items:flex-start; gap:1em;">
+<img src="../../vignettes/figures/drug_mapping_diagram_nokey.png" style="width:65%; height:auto;" />
+<ol style="width:35%; font-size:0.65em; line-height:1.8; margin:0; padding-left:1.2em;">
+<li>Sparse (≤10 events) → dropped</li>
+<li>Distinct opioids kept separate</li>
+<li>Related sparse drugs merged</li>
+<li>Alcohol subcategories kept</li>
+<li>Per-drug: <code>_days</code>, <code>_binary</code>, <code>_streak</code></li>
+</ol>
+</div>
 
 ## Per-Drug & Derived Features {.smaller}
 
