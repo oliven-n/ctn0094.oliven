@@ -244,9 +244,23 @@ stopifnot(
   "tlfb_rel is missing entries" = all(tlfb_drugs$what %in% tlfb_rel$what)
 )
 
+# Text colors for tlfb labels:
+#   same     → inherits matched adf pal color (vivid, same as the filtered-box label)
+#   grouped/finer/partial → three distinct readable grays
+#   tlfb_only → black
+TLFB_TEXT_COLORS <- c(
+  tlfb_grouped = "#404040",
+  tlfb_finer   = "#707070",
+  partial      = "#969696",
+  tlfb_only    = "#000000"
+)
+
 tlfb_pos <- tlfb_drugs |>
   left_join(tlfb_rel, by = "what") |>
-  mutate(rel_color = REL_COLORS[rel_type])
+  mutate(rel_color = case_when(
+    rel_type == "same" ~ pal[align_cat],
+    .default = TLFB_TEXT_COLORS[rel_type]
+  ))
 
 # ---- tlfb positions ----
 # Category-aligned entries (same, tlfb_grouped, tlfb_finer, partial — where align_cat set)
@@ -333,7 +347,8 @@ opioid_tlfb_y <- tlfb_rows$y[tlfb_rows$what == "Opioid"]
 stopifnot(length(opioid_tlfb_y) == 1L)
 extra_partial_arrows <- filt_rows |>
   filter(what_grouped %in% c("Fentanyl", "Suboxone")) |>
-  transmute(x = ADF_R, xend = TLFB_L, y = y, yend = opioid_tlfb_y)
+  transmute(x = ADF_R, xend = TLFB_L, y = y, yend = opioid_tlfb_y,
+            color = pal[what_grouped])
 
 # 4. Alcohol: three one-way arrows from each adf alcohol category → tlfb Alcohol
 alcohol_tlfb_y <- tlfb_rows$y[tlfb_rows$what == "Alcohol"]
@@ -342,14 +357,17 @@ alcohol_arrows <- filt_rows |>
   filter(what_grouped %in% c("Alcohol Heavy Amnt", "Alcohol Light Amnt", "Alcohol Missing Amnt")) |>
   transmute(x = ADF_R, xend = TLFB_L, y = y, yend = alcohol_tlfb_y)
 
-# 5. Opium dotted arrow: adf Heroin → tlfb Opioid
-heroin_adf_y <- filt_rows$y[filt_rows$what_grouped == "Heroin"]
-stopifnot(length(heroin_adf_y) == 1L)
+# 5. Opium dotted arrow: adf Opioid → tlfb Heroin (Opium maps into tlfb Heroin)
+opioid_adf_y  <- filt_rows$y[filt_rows$what_grouped == "Opioid"]
+heroin_tlfb_y <- tlfb_rows$y[tlfb_rows$what == "Heroin"]
+stopifnot(length(opioid_adf_y) == 1L, length(heroin_tlfb_y) == 1L)
 opium_arrow <- tibble(
   x = ADF_R, xend = TLFB_L,
-  y = heroin_adf_y, yend = opioid_tlfb_y,
-  mid_x = (ADF_R + TLFB_L) / 2,
-  mid_y = (heroin_adf_y + opioid_tlfb_y) / 2
+  y = opioid_adf_y, yend = heroin_tlfb_y,
+  # label near tlfb end, offset above so it clears the arrow line
+  lbl_x = ADF_R + 0.7 * (TLFB_L - ADF_R),
+  lbl_y = opioid_adf_y + 0.7 * (heroin_tlfb_y - opioid_adf_y) + 0.65,
+  color = pal["Opioid"]
 )
 
 # 6. Extra grouped arrows: adf Crack → tlfb Cocaine, adf Methamphetamine → tlfb Amphetamine
@@ -428,39 +446,39 @@ p <- ggplot() +
   geom_segment(data = arrows_df, aes(x = x, y = y, xend = xend, yend = yend),
                arrow = arrow(length = unit(0.18, "cm"), type = "closed"),
                linewidth = 0.6, color = "grey20") +
-  # Arrows: tlfb ↔ adf (two-way, same rel_type only)
+  # Arrows: tlfb ↔ adf (two-way, same rel_type only) — black
   geom_segment(data = tlfb_arrows_both,
                aes(x = x, y = y, xend = xend, yend = yend),
                arrow = arrow(ends = "both", length = unit(0.15, "cm"), type = "closed"),
-               linewidth = 0.5, color = REL_COLORS["same"]) +
-  # Arrows: adf → tlfb (one-way, non-same aligned entries)
+               linewidth = 0.5, color = "black") +
+  # Arrows: adf → tlfb (one-way, non-same aligned entries) — black
   geom_segment(data = tlfb_arrows_one,
                aes(x = x, y = y, xend = xend, yend = yend),
                arrow = arrow(ends = "last", length = unit(0.15, "cm"), type = "closed"),
-               linewidth = 0.5, color = "grey30") +
-  # Extra partial arrows: adf Fentanyl/Suboxone → tlfb Opioid
+               linewidth = 0.5, color = "black") +
+  # Extra partial arrows: adf Fentanyl/Suboxone → tlfb Opioid — drug-specific adf color
   geom_segment(data = extra_partial_arrows,
-               aes(x = x, y = y, xend = xend, yend = yend),
+               aes(x = x, y = y, xend = xend, yend = yend, color = I(color)),
                arrow = arrow(ends = "last", length = unit(0.15, "cm"), type = "closed"),
-               linewidth = 0.5, color = REL_COLORS["partial"]) +
-  # Extra grouped arrows: adf Crack/Methamphetamine → their tlfb targets
+               linewidth = 0.5) +
+  # Extra grouped arrows: adf Crack/Methamphetamine → their tlfb targets — black
   geom_segment(data = extra_grouped_arrows,
                aes(x = x, y = y, xend = xend, yend = yend),
                arrow = arrow(ends = "last", length = unit(0.15, "cm"), type = "closed"),
-               linewidth = 0.5, color = REL_COLORS["tlfb_grouped"]) +
-  # Alcohol arrows: three adf categories → tlfb Alcohol
+               linewidth = 0.5, color = "black") +
+  # Alcohol arrows: three adf categories → tlfb Alcohol — black
   geom_segment(data = alcohol_arrows,
                aes(x = x, y = y, xend = xend, yend = yend),
                arrow = arrow(ends = "last", length = unit(0.15, "cm"), type = "closed"),
-               linewidth = 0.5, color = REL_COLORS["tlfb_grouped"]) +
-  # Opium dotted arrow: adf Heroin → tlfb Opioid
+               linewidth = 0.5, color = "black") +
+  # Opium dotted arrow: adf Opioid → tlfb Heroin — adf Opioid color
   geom_segment(data = opium_arrow,
-               aes(x = x, y = y, xend = xend, yend = yend),
+               aes(x = x, y = y, xend = xend, yend = yend, color = I(color)),
                arrow = arrow(ends = "last", length = unit(0.15, "cm"), type = "closed"),
-               linetype = "dashed", linewidth = 0.5, color = "grey40") +
+               linetype = "dashed", linewidth = 0.5) +
   geom_text(data = opium_arrow,
-            aes(x = mid_x, y = mid_y + 0.35, label = "(Opium)"),
-            size = 2.4, family = "Courier", color = "grey30") +
+            aes(x = lbl_x, y = lbl_y, label = "(Opium)", color = I(color)),
+            size = 2.4, family = "Courier") +
   # Drug name labels: all_drugs (left), filtered (middle), tlfb (right)
   geom_text(data = ad_rows,
             aes(x, y, label = label, color = I(text_color)),
