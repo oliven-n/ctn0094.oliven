@@ -72,7 +72,7 @@ relapse_col  # expect: 2, and yes
 # this is leave one out, so all other 1867 rows are used as context for each row.
 # this (or rather our actual call that we save to a var later) is to get the "all train"
 # performance col in the reporting table (6, currently) in analysis qmd
-tabpfn_fit$predict_proba(X_train)[1:3, ] # expect: 3x2 matrix, rows sum to ~1
+# tabpfn_fit$predict_proba(X_train)[1:3, ] # expect: 3x2 matrix, rows sum to ~1; skip to avoid full inference here
 # works! we are good to go.
 
 # CV Metrics --------
@@ -121,12 +121,18 @@ tabpfn_cv_metrics
 # in-sample prediction on the same train_data — intentionally optimistic,
 # equivalent to Balise et al.'s "Full Training Dataset" column.
 # Uses leave-one-out context: each training row predicted using all others as context.
-proba_train <- tabpfn_fit$predict_proba(X_train)
-relapse_pred_tabpfn <- tibble(
-  .pred_0 = proba_train[, setdiff(1:2, relapse_col)],
-  .pred_1 = proba_train[, relapse_col],
-  outcome = train_data$outcome
-)
+tabpfn_train_pred_cache <- here::here("vignettes/tabpfn_train_pred.rds")
+if (file.exists(tabpfn_train_pred_cache)) {
+  relapse_pred_tabpfn <- readRDS(tabpfn_train_pred_cache)
+} else {
+  proba_train <- tabpfn_fit$predict_proba(X_train)
+  relapse_pred_tabpfn <- tibble(
+    .pred_0 = proba_train[, setdiff(1:2, relapse_col)],
+    .pred_1 = proba_train[, relapse_col],
+    outcome = train_data$outcome
+  )
+  saveRDS(relapse_pred_tabpfn, tabpfn_train_pred_cache)
+}
 
 tabpfn_cut <- youden_cutoff(relapse_pred_tabpfn)
 tabpfn_cut
@@ -164,13 +170,19 @@ relapse_pred_tabpfn |>
 # Structure verified against knn_test_metrics: same column names/order/types
 # and same .metric order: accuracy, roc_auc, sens, spec.
 # Youden-J cutoff chosen on train_data (tabpfn_cut), applied here.
-X_test <- bake_X(tabpfn_prep, test_data)
-proba_test <- tabpfn_fit$predict_proba(X_test)
-relapse_pred_tabpfn_test <- tibble(
-  .pred_0 = proba_test[, setdiff(1:2, relapse_col)],
-  .pred_1 = proba_test[, relapse_col],
-  outcome = test_data$outcome
-)
+tabpfn_test_pred_cache <- here::here("vignettes/tabpfn_test_pred.rds")
+if (file.exists(tabpfn_test_pred_cache)) {
+  relapse_pred_tabpfn_test <- readRDS(tabpfn_test_pred_cache)
+} else {
+  X_test <- bake_X(tabpfn_prep, test_data)
+  proba_test <- tabpfn_fit$predict_proba(X_test)
+  relapse_pred_tabpfn_test <- tibble(
+    .pred_0 = proba_test[, setdiff(1:2, relapse_col)],
+    .pred_1 = proba_test[, relapse_col],
+    outcome = test_data$outcome
+  )
+  saveRDS(relapse_pred_tabpfn_test, tabpfn_test_pred_cache)
+}
 
 # accuracy at the tidymodels default 0.5 threshold (matches collect_metrics()),
 # then roc_auc, then sens/spec at the TRAIN-chosen cutoff — same order

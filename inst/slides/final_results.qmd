@@ -108,6 +108,7 @@ xgboost_train_sens <- xgboost_train_metrics$.estimate[xgboost_train_metrics$.met
 xgboost_train_spec <- xgboost_train_metrics$.estimate[xgboost_train_metrics$.metric == "spec"]
 tabpfn_train_sens  <- tabpfn_train_metrics$.estimate[tabpfn_train_metrics$.metric == "sens"]
 tabpfn_train_spec  <- tabpfn_train_metrics$.estimate[tabpfn_train_metrics$.metric == "spec"]
+lasso_n_features   <- nrow(lasso_coef)
 ```
 
 # About Me
@@ -350,10 +351,10 @@ Winner selected by **highest 5-fold cross-validated ROC AUC** (criterion fixed i
 
 - **`r winner_name`** — CV AUC `r round(winner_cv, 3)` — formal winner by CV criterion
 
-Two models also highlighted for additional potential:
+Two honorable mentions:
 
-- **Random Forest** — strong CV and train AUC; headroom with a larger tree budget or relaxed hyperparameter grid
-- **TabPFN** — highest full in-sample train AUC (`r round(tabpfn_train_auc, 3)`) of any method; zero tuning overhead
+- **LASSO** — CV AUC `r round(lasso_cv_auc, 3)` using only `r lasso_n_features` non-zero features post-regularization; strong discrimination from a very sparse predictor set
+- **XGBoost** — CV AUC `r round(xgboost_cv_auc, 3)`; all tuning candidates exhausted the 5,000-tree budget — performance likely improves with a larger tree budget
 
 ## Variable Importance: Winners
 
