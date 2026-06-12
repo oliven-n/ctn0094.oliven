@@ -37,7 +37,6 @@ editor: source
 
 ```{r setup}
 #| include: false
-#| cache: true
 library(conflicted)
 suppressPackageStartupMessages(library(tidymodels))
 tidymodels_prefer()
@@ -45,8 +44,52 @@ suppressPackageStartupMessages(library(tidyverse))
 library(knitr)
 conflicts_prefer(dplyr::filter)
 options(dplyr.summarise.inform = FALSE)
+
 source("../../vignettes/building_analysis.R")
+source("../../vignettes/logistic_regression.R")
+source("../../vignettes/logistic_regression_without_problem_vars.R")
+source("../../vignettes/logistic_regression_wopv_kfold.R")
+source("../../vignettes/knn.R")
+# Save KNN metrics BEFORE knn_wopv.R overwrites knn_train_metrics / knn_cv_metrics
+knn_train_auc <- knn_train_metrics$.estimate[knn_train_metrics$.metric == "roc_auc"]
+knn_cv_auc    <- knn_cv_metrics$mean[knn_cv_metrics$.metric == "roc_auc"]
+knn_test_auc  <- knn_test_metrics$.estimate[knn_test_metrics$.metric == "roc_auc"]
+source("../../vignettes/knn_wopv.R")
+knn_wopv_train_auc <- knn_wopv_train_metrics$.estimate[knn_wopv_train_metrics$.metric == "roc_auc"]
+knn_wopv_cv_auc    <- knn_wopv_cv_metrics$mean[knn_wopv_cv_metrics$.metric == "roc_auc"]
+source("../../vignettes/logistic_enet.R")
+source("../../vignettes/cart.R")
+source("../../vignettes/random_forest.R")
+source("../../vignettes/xgboost.R")
+source("../../vignettes/tabpfn.R")
+
+# Precompute scalar AUC variables for inline R
+lr_train_auc      <- lr_metrics$.estimate[lr_metrics$.metric == "roc_auc"]
+lr_cv_auc         <- lr_cv_test_metrics$.estimate[lr_cv_test_metrics$.metric == "roc_auc"]
+enet_cv_auc       <- enet_cv_metrics$mean[enet_cv_metrics$.metric == "roc_auc"]
+enet_train_auc    <- enet_train_metrics$.estimate[enet_train_metrics$.metric == "roc_auc"]
+lasso_cv_auc      <- lasso_cv_metrics$mean[lasso_cv_metrics$.metric == "roc_auc"]
+lasso_train_auc   <- lasso_train_metrics$.estimate[lasso_train_metrics$.metric == "roc_auc"]
+cart_cv_auc       <- cart_cv_metrics$mean[cart_cv_metrics$.metric == "roc_auc"]
+cart_train_auc    <- cart_train_metrics$.estimate[cart_train_metrics$.metric == "roc_auc"]
+randfor_cv_auc    <- randfor_cv_metrics$mean[randfor_cv_metrics$.metric == "roc_auc"]
+randfor_train_auc <- randfor_train_metrics$.estimate[randfor_train_metrics$.metric == "roc_auc"]
+randfor_test_auc  <- randfor_test_metrics$.estimate[randfor_test_metrics$.metric == "roc_auc"]
+xgboost_cv_auc    <- xgboost_cv_metrics$mean[xgboost_cv_metrics$.metric == "roc_auc"]
+xgboost_train_auc <- xgboost_train_metrics$.estimate[xgboost_train_metrics$.metric == "roc_auc"]
+xgboost_test_auc  <- xgboost_test_metrics$.estimate[xgboost_test_metrics$.metric == "roc_auc"]
+tabpfn_cv_auc     <- tabpfn_cv_metrics$mean[tabpfn_cv_metrics$.metric == "roc_auc"]
+tabpfn_train_auc  <- tabpfn_train_metrics$.estimate[tabpfn_train_metrics$.metric == "roc_auc"]
+tabpfn_test_auc   <- tabpfn_test_metrics$.estimate[tabpfn_test_metrics$.metric == "roc_auc"]
 ```
+
+# About Me
+
+## About Me
+
+- [Name / Role — fill in later]
+- [Institution / program — fill in later]
+- [Research interests — fill in later]
 
 # Introduction
 
@@ -96,57 +139,29 @@ source("../../vignettes/building_analysis.R")
 - MOUD is effective at the **group level**, but individual response varies substantially
 - A patient assigned to one medication may do well; assigned to another, they may relapse within weeks
 - No validated clinical tool currently exists to guide MOUD selection for a given patient
-- **Goal of this project:** Use pre-treatment patient characteristics to predict treatment response and identify which patients are most likely to benefit from each medication
+- **Goal:** Use pre-treatment patient characteristics to predict treatment response
 
 # Data
 
 ## CTN-0094 Harmonized Dataset
 
-Three NIDA Clinical Trials Network randomized controlled trials, harmonized in the `public.ctn0094data` R package:
+Three NIDA Clinical Trials Network randomized controlled trials, harmonized in `public.ctn0094data`:
 
-| Study | Comparison | N |
-|---|---|---|
-| CTN-0028 | Methadone vs. Buprenorphine-Naloxone | 1,920 |
-| CTN-0030 | Buprenorphine-Naloxone (dose taper study) | 868 |
-| CTN-0051 | XR-Naltrexone vs. Buprenorphine-Naloxone | 772 |
-| **Total** | | **3,560** |
+| Study | Comparison |
+|---|---|
+| CTN-0027 | Methadone vs. Buprenorphine-Naloxone |
+| CTN-0030 | Buprenorphine-Naloxone (dose taper) |
+| CTN-0051 | XR-Naltrexone vs. Buprenorphine-Naloxone |
 
-Participants were opioid-dependent adults enrolled at community treatment programs across the United States.
+**Analysis sample:** `r scales::comma(nrow(analysis_tibble))` care-seeking adults with OUD (first randomization only; 2006–2016)
 
-## Study Design & Inclusion Criteria
+- Pre-treatment window: days −28 to −1 relative to randomization
+- **`r ncol(analysis_tibble) - 2L` predictors** spanning substance use, demographics, clinical assessments
+- Outcome: relapse during treatment period (binary)
 
-- **Unit of analysis:** One row per participant, first randomization only
-  - CTN-0030 includes a re-randomization step — excluded via inner join on each participant's earliest randomization date
-- **Pre-treatment window:** Days −28 to −1 relative to randomization (day 0)
-  - Exactly 28 days; provides 4 of each weekday per participant
-  - No data from the treatment period (day 0 onward) used as predictors
-- **Outcome:** Relapse during the treatment period
-  - Not yet joined to the feature matrix — will be added at modelling time
+# Feature Engineering
 
-# Methods
-
-## Feature Engineering: Overview
-
-- **Feature matrix:** `r nrow(analysis_tibble)` participants × `r ncol(analysis_tibble) - 2L` feature columns (current; grows as TODOs are resolved)
-- All longitudinal features derived exclusively from the 28-day pre-randomization window
-- Primary substance use source: `all_drugs` dataset
-  - More granular than standalone TLFB table
-  - Covers three detection sources: TLFB self-report, urine drug screen (UDS), UDS with alcohol biomarker (UDSAB)
-- Categorical variables kept as-is; dummy encoding applied at modelling time
-
-## Substance Use: Drug Grouping
-
-Drug categories grouped via `drug_map` to reduce sparsity; ≥10-event sparsity filter applied:
-
-- 11 Rx opioids (codeine, hydrocodone, oxycodone, …) → **"Opioid"**
-- THC + K2 → **"Cannabinoids"** &nbsp;·&nbsp; MDMA + Hallucinogen → **"MDMA/Hallucinogen"**
-- Sedative-Hypnotic + Barbiturate → **"Sedatives"** &nbsp;·&nbsp; Acetaminophen + Gabapentin → **"Analgesic"**
-- **Kept separate:** Heroin, Methadone, Buprenorphine, Suboxone, Fentanyl, Cocaine, Crack, Methamphetamine, Amphetamine
-- **Dropped (< 10 events):** Antibiotic, Antihistamine, Antipsychotic, Cathinones, Inhalant, Methylphenidate, Antidepressant, Unknown
-
-**`r length(surviving_drugs)` drug categories** survived filtering.
-
-## Feature Engineering: Drug Aggregation {.smaller}
+## Substance Use: Drug Aggregation
 
 :::: {.columns}
 ::: {.column width="57%"}
@@ -173,57 +188,224 @@ Drug categories grouped via `drug_map` to reduce sparsity; ≥10-event sparsity 
 :::
 ::::
 
-## Substance Use: Per-Drug Features
+## Per-Drug & Derived Features
 
-For each surviving drug category, up to three features are computed:
+**For each of `r length(surviving_drugs)` surviving drug categories, up to three features:**
 
-| Feature | Description | Omitted for |
-|---|---|---|
-| `_days` | Distinct days of detected use | — |
-| `_streak` | Longest consecutive-day run | Study medications, low-signal substances |
-| `_binary` | Any use in the window (0/1) | — |
+- **`_days`** — total days of detected use: how *frequent* was use?
+- **`_binary`** — any use in the window (0/1): was it present at all?
+- **`_streak`** — longest consecutive-day run: was use *sustained*?
+  Omitted for MOUD agents (buprenorphine, methadone, suboxone) — consecutive use = adherence, not escalation
 
-**Examples:** `heroin_days`, `heroin_streak`, `heroin_binary`; `cannabinoids_days`, `cannabinoids_binary`
+**Cross-drug composite features:**
 
-Streak is omitted for pre-randomization study medications (buprenorphine, suboxone, methadone) because consecutive use reflects adherence, not escalation.
+- **`alcohol_restraint`** — heavy drinking days − light drinking days (net binge index)
+- **`polydrug_days`** — days with ≥ 2 distinct categories simultaneously
+- **`drug_breadth`** — number of distinct categories used in the window
+- **`lie_rate`** — UDS-positive but TLFB self-reported no use ÷ total UDS-positive days (under-reporting proxy)
 
-## Derived Substance Use Features
+# Preprocessing
 
-| Feature | Definition |
+## Preprocessing Recipe {.smaller}
+
+All steps applied inside each workflow — recipe fit on the analysis fold only (no leakage):
+
+| Step | What it does |
 |---|---|
-| `alcohol_restraint` | Heavy drinking days − light drinking days |
-| `polydrug_days` | Days with ≥ 2 distinct drug categories used simultaneously |
-| `drug_breadth` | Number of distinct drug categories used in the window |
-| `lie_count` | Days where UDS/UDSAB positive but TLFB reported no use |
-| `lie_rate` | `lie_count` ÷ total UDS-positive days |
+| `update_role(who, new_role = "ID")` | Exclude participant ID from modeling |
+| `step_rm()` + `step_zv()` | Drop treatment-arm leakage vars and zero-variance cols |
+| `step_indicate_na()` | Explicit missingness indicator for structural MNAR missingness |
+| `step_impute_median()` / `step_impute_mode()` | Impute sporadic MCAR missingness |
+| `step_ordinalscore()` | Convert ordered factors to numeric with equal spacing |
+| `step_normalize()` | Standardize all numerics (required for KNN; stabilizes penalized regression) |
+| `step_dummy()` + poly contrasts | One-hot encode unordered factors; polynomial for cigarettes/day |
+| `step_corr(threshold = 0.90)` | Drop predictors with pairwise \|r\| > 0.90 |
 
-The `lie_count` feature is a day-level proxy for under-reporting (not substance-matched). A more precise substance-level version is noted as a future improvement.
+# Methods
 
-## Additional Feature Domains
+## Logistic Regression
 
-::: {style="font-size: 0.85em;"}
+- Standard binary logistic regression; no regularization; **interpretable baseline**
+- Two variants: all predictors vs. no problem vars (near-separating sparse indicators removed for stability)
+- Generalization estimated by 5-fold CV with `fit_resamples()`
 
-| Domain | Features | Status |
+| | CV AUC | Full Train AUC |
 |---|---|---|
-| Demographics | Age, sex, race, Hispanic ethnicity, education, marital status, housing stability | Complete |
-| Rx adherence composite | `rx_days`, `rx_categories`, `rx_any_binary` (non-addictive Rx only) | Complete |
-| Fagerstrom nicotine dependence | FTND total score (0–10) | Column name needed |
-| ASI subscores | Drug, alcohol, legal, family, psychiatric, employment, medical | Column name needed |
-| Psychiatric comorbidities | Depression, anxiety, PTSD binary flags; comorbidity count | Column name needed |
-| Pain × drug interactions | Correlation of daily pain with hard/soft drug use; high-pain-day rate | Pain score column needed |
-| Quality of life | Overall, physical, mental subscores | Column name needed |
-| Withdrawal trajectory | Slope of COWS/SOWS over the window (linear regression) | Score column needed |
-| Study drug concordance | Took assigned MOUD pre-randomization? Took a different MOUD? | Treatment column needed |
-| Study site | Masked site identifier | Confirm column name |
+| Logistic (5-fold CV) | `r round(lr_cv_auc, 3)` | `r round(lr_train_auc, 3)` |
 
+## LASSO & Elastic Net
+
+- Penalized logistic regression (`glmnet`); L1 penalty (LASSO) or L1+L2 blend (elastic net)
+- Elastic net selected `mixture = 0.25` (25% L1 / 75% L2) via 50 × 5 grid CV
+- Final penalty by the **one-standard-error rule**: favors sparser, more regularized model
+
+| Model | CV AUC | Full Train AUC |
+|---|---|---|
+| Elastic net | `r round(enet_cv_auc, 3)` | `r round(enet_train_auc, 3)` |
+| LASSO | `r round(lasso_cv_auc, 3)` | `r round(lasso_train_auc, 3)` |
+
+## K-Nearest Neighbors
+
+- Non-parametric; no assumed functional form (`kknn` engine)
+- $k$ neighbors tuned from 5 to 50 by 5-fold CV; one-standard-error rule
+- Tolerates sparse separating predictors (no coefficients to blow up)
+
+| | CV AUC | Full Train AUC |
+|---|---|---|
+| KNN | `r round(knn_cv_auc, 3)` | `r round(knn_train_auc, 3)` |
+
+## Classification and Regression Tree (CART)
+
+- Single pruned decision tree (`rpart`); Gini impurity criterion
+- `cost_complexity` tuned over log-spaced grid; one-standard-error rule selects deepest tree within 1 SE
+- **Most transparent** — splits read as a clinical decision flow
+
+| | CV AUC | Full Train AUC |
+|---|---|---|
+| CART | `r round(cart_cv_auc, 3)` | `r round(cart_train_auc, 3)` |
+
+## Random Forest
+
+- Bootstrap aggregation of **1,000 unpruned trees** (`ranger`); each tree sees a random predictor subset
+- `mtry` and `min_n` tuned by 5-fold CV; `select_best`
+- Averaging across trees sharply reduces single-tree variance
+
+| | CV AUC | Full Train AUC |
+|---|---|---|
+| Random Forest | `r round(randfor_cv_auc, 3)` | `r round(randfor_train_auc, 3)` |
+
+## XGBoost
+
+- Sequential gradient boosting with shrinkage and built-in regularization (`xgboost` engine)
+- Five hyperparameters tuned; tree budget fixed at 5,000 with early stopping
+- All tuning candidates exhausted the tree budget — headroom with a larger budget
+
+| | CV AUC | Full Train AUC |
+|---|---|---|
+| XGBoost | `r round(xgboost_cv_auc, 3)` | `r round(xgboost_train_auc, 3)` |
+
+## TabPFN
+
+- Pretrained in-context transformer; **zero tuning** — no parameters learned on this dataset
+- 5-fold CV implemented manually (no parsnip engine): each fold preps recipe → bakes → forward pass
+- Exceeds 1,000-sample pretraining limit (`ignore_pretraining_limits = TRUE`); Python via `reticulate`
+
+| | CV AUC | Full Train AUC |
+|---|---|---|
+| TabPFN | `r round(tabpfn_cv_auc, 3)` | `r round(tabpfn_train_auc, 3)` |
+
+# Results
+
+## Model Performance Summary
+
+```{r tbl-all-metrics-slide}
+tibble::tribble(
+  ~Method,            ~CV,                       ~Train,
+  "Logistic (CV)",    round(lr_cv_auc, 3),        round(lr_train_auc, 3),
+  "Elastic net",      round(enet_cv_auc, 3),      round(enet_train_auc, 3),
+  "LASSO",            round(lasso_cv_auc, 3),     round(lasso_train_auc, 3),
+  "KNN",              round(knn_cv_auc, 3),       round(knn_train_auc, 3),
+  "CART",             round(cart_cv_auc, 3),      round(cart_train_auc, 3),
+  "Random Forest",    round(randfor_cv_auc, 3),   round(randfor_train_auc, 3),
+  "XGBoost",          round(xgboost_cv_auc, 3),   round(xgboost_train_auc, 3),
+  "TabPFN",           round(tabpfn_cv_auc, 3),    round(tabpfn_train_auc, 3)
+) |>
+  kable(col.names = c("Method", "CV AUC", "Full Train AUC"), align = "lrr")
+```
+
+## Selecting the Winner(s)
+
+Winner selected by **highest 5-fold cross-validated ROC AUC** (criterion fixed in advance):
+
+- **`r if (tabpfn_cv_auc >= xgboost_cv_auc && tabpfn_cv_auc >= randfor_cv_auc) "TabPFN" else if (xgboost_cv_auc >= randfor_cv_auc) "XGBoost" else "Random Forest"`** — CV AUC `r round(max(tabpfn_cv_auc, xgboost_cv_auc, randfor_cv_auc), 3)` — formal winner by CV criterion
+
+Two models also highlighted for additional potential:
+
+- **Random Forest** — strong CV and train AUC; headroom with a larger tree budget or relaxed hyperparameter grid
+- **TabPFN** — highest full in-sample train AUC (`r round(tabpfn_train_auc, 3)`) of any method; zero tuning overhead
+
+## Variable Importance: Winners
+
+:::: {.columns}
+::: {.column width="50%"}
+**Random Forest** (impurity-based)
+
+```{r vip-randfor-slide}
+#| fig-height: 4
+#| fig-width: 4.5
+vip::vip(randfor_fit, num_features = 15, geom = "col") +
+  ggplot2::labs(
+    title = "Random Forest",
+    x = "Mean Gini decrease", y = NULL
+  ) +
+  ggplot2::theme_minimal(base_size = 9)
+```
 :::
+::: {.column width="50%"}
+**TabPFN** (permutation-based)
 
-## Next Steps
+```{r vip-tabpfn-slide}
+#| fig-height: 4
+#| fig-width: 4.5
+vip::vip(tabpfn_vip_obj, num_features = 15, geom = "col") +
+  ggplot2::labs(
+    title = "TabPFN",
+    x = "Mean ROC AUC drop", y = NULL
+  ) +
+  ggplot2::theme_minimal(base_size = 9)
+```
+:::
+::::
 
-1. **Resolve column names** for clinical datasets by running `glimpse()` calls in `building_analysis.R` interactively — this will unlock ~10 additional feature domains
-2. **Join relapse outcome** to the feature matrix at modelling time
-3. **Model development** using a `tidymodels` pipeline:
-   - Cross-validation strategy (nested or stratified by study)
-   - Candidate algorithms: regularized regression (LASSO/ridge), random forest, XGBoost
-   - Evaluation metrics: AUC, calibration, clinical utility
-4. **Treatment matching analysis:** assess whether predictive features differ across MOUD arms
+## ROC Curves: Winners
+
+:::: {.columns}
+::: {.column width="50%"}
+**Random Forest** (test AUC = `r round(randfor_test_auc, 3)`)
+
+```{r roc-randfor-slide}
+#| fig-height: 3.5
+#| fig-width: 4.5
+relapse_pred_randfor_test |>
+  roc_curve(truth = outcome, .pred_1, event_level = "second") |>
+  autoplot() +
+  ggplot2::labs(title = NULL, x = "1 − Specificity", y = "Sensitivity") +
+  ggplot2::theme_minimal(base_size = 9)
+```
+:::
+::: {.column width="50%"}
+**TabPFN** (test AUC = `r round(tabpfn_test_auc, 3)`)
+
+```{r roc-tabpfn-slide}
+#| fig-height: 3.5
+#| fig-width: 4.5
+relapse_pred_tabpfn_test |>
+  roc_curve(truth = outcome, .pred_1, event_level = "second") |>
+  autoplot() +
+  ggplot2::labs(title = NULL, x = "1 − Specificity", y = "Sensitivity") +
+  ggplot2::theme_minimal(base_size = 9)
+```
+:::
+::::
+
+# Future Directions
+
+## Future Directions
+
+- [To be completed — pending further input]
+
+# Limitations
+
+## Limitations
+
+- **Generalizability:** `project` encodes population, protocol, and outcome ascertainment differences; model may not transfer to new studies with different eligibility criteria or follow-up designs
+
+- **Prognostic, not prescriptive:** treatment arm excluded; predicts relapse *risk*, not which medication a patient would benefit from
+
+- **Modest overall discrimination:** test AUC in a narrow band across all methods; the pre-treatment signal for relapse is inherently limited
+
+- **TabPFN size limit:** pretrained on datasets ≤ 1,000 samples; our ~1,869-row training set requires bypassing a safety guard (`ignore_pretraining_limits = TRUE`)
+
+- **Permutation importance instability:** TabPFN and KNN importance estimates use a single permutation pass — rankings are indicative, not definitive
+
+- **LASSO selection instability:** selected predictors change substantially with different random seeds; the sparse set should not be read as identifying the true causal drivers of relapse
