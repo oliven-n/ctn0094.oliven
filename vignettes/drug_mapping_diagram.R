@@ -166,7 +166,7 @@ hl_boxes <- ad_rows |>
 filt_rows <- ad_rows |>
   filter(kind == "grouped") |>
   group_by(what_grouped, cat_rank) |>
-  summarize(y = mean(y), .groups = "drop") |>
+  summarize(y = if (n() == 2L) max(y) else mean(y), .groups = "drop") |>
   mutate(x = col_x["filtered"] + pad_x, color = pal[what_grouped]) |>
   arrange(cat_rank)
 
@@ -382,7 +382,17 @@ extra_grouped_arrows <- bind_rows(
     transmute(x = ADF_R, xend = TLFB_L, y = y, yend = amphet_tlfb_y)
 )
 
-# ---- legend ----
+# ---- legend / key (positioned to right of tlfb panel) ----
+key_x_left  <- col_x["tlfb"] + box_w + 3       # left edge of key box
+key_x_dot   <- key_x_left + 0.5                 # dot center x
+key_x_txt   <- key_x_left + 1.5                 # label text start x
+key_y_title <- box_top - 1.5                    # "Key" title y
+key_y0      <- box_top - 3.0                    # first legend entry y
+key_yd      <- 1.25                             # vertical spacing between entries
+key_y_note  <- key_y0 - length(REL_COLORS) * key_yd   # asterisk note y
+key_x_right <- key_x_left + 13                  # right edge of key box
+key_y_bot   <- key_y_note - 1.5                 # bottom of key box
+
 # same: white bullet w/ black border (tlfb drugs inherit adf colors — no single hue)
 # tlfb_grouped / tlfb_finer / partial: matching TLFB_TEXT_COLORS grays
 # tlfb_only: black
@@ -402,9 +412,15 @@ legend_df <- tibble(
   border_col = c("black",  TLFB_TEXT_COLORS["tlfb_grouped"], TLFB_TEXT_COLORS["tlfb_finer"],
                  TLFB_TEXT_COLORS["partial"], "#000000"),
   pt_shape   = c(21L, 19L, 19L, 19L, 19L),
-  x = col_x["tlfb"] - 1,
-  y = box_bot - 1.2 - (seq_len(length(REL_COLORS)) - 1) * 1.1
+  x = key_x_dot,
+  y = key_y0 - (seq_len(length(REL_COLORS)) - 1) * key_yd
 )
+
+key_box <- rounded_rect(key_x_left, key_y_bot, key_x_right, box_top - 0.5,
+                        r = 0.5, group = "key_box")
+key_title_df <- tibble(x = (key_x_left + key_x_right) / 2, y = key_y_title, label = "Key")
+key_note_df  <- tibble(x = key_x_txt, y = key_y_note,
+                       label = "* = opioid kept separate from Opioid group")
 
 # ---- OVERFLOW GUARDS ----
 char_w   <- 0.16                          # approx data-units per char at base_size 11
@@ -443,6 +459,11 @@ titles_df <- tibble(
   label = c("all_drugs", "all_drugs_filtered", "tlfb"),
   x = c(col_x["all_drugs"]+box_w/2, col_x["filtered"]+box_w/2, col_x["tlfb"]+box_w/2),
   y = box_top + 1.2
+)
+fig_title_df <- tibble(
+  label = "Cross-Study Comparison of Drug Feature Aggregation",
+  x = (col_x["all_drugs"] + col_x["tlfb"] + box_w) / 2,
+  y = box_top + 3.2
 )
 
 p <- ggplot() +
@@ -499,12 +520,23 @@ p <- ggplot() +
             hjust = 0, size = 3.1, family = "Courier", fontface = "bold") +
   geom_text(data = titles_df, aes(x, y, label = label),
             size = 5.5, fontface = "bold") +
+  # Key box (to right of tlfb panel) with title
+  geom_polygon(data = key_box, aes(x, y, group = group),
+               fill = "#FFF4DC", color = "black", linewidth = 0.6) +
+  geom_text(data = key_title_df, aes(x, y, label = label),
+            size = 4.5, fontface = "bold") +
   # Legend — shape 21 for "same" (white fill + black border), 19 for the rest
   geom_point(data = legend_df,
              aes(x, y, color = I(border_col), fill = I(fill_col), shape = I(pt_shape)),
              size = 2.5) +
-  geom_text(data = legend_df, aes(x + 0.5, y, label = label, color = I(text_col)),
+  geom_text(data = legend_df, aes(x + 1, y, label = label, color = I(text_col)),
             hjust = 0, size = 2.6, family = "Courier") +
+  # Key asterisk note
+  geom_text(data = key_note_df, aes(x, y, label = label),
+            hjust = 0, size = 2.4, family = "Courier", color = "black") +
+  # Figure title
+  geom_text(data = fig_title_df, aes(x, y, label = label),
+            size = 5.5, fontface = "bold") +
   coord_equal(clip = "off") +
   theme_void() +
   theme(plot.margin = margin(20, 20, 20, 20))
@@ -513,7 +545,7 @@ print(p)
 
 dir.create("vignettes/figures", showWarnings = FALSE, recursive = TRUE)
 ggsave("vignettes/figures/drug_mapping_diagram.png", p,
-       width = 13, height = 11, dpi = 200, bg = "white")
+       width = 17, height = 11, dpi = 200, bg = "white")
 ggsave("vignettes/figures/drug_mapping_diagram.pdf", p,
-       width = 13, height = 11, bg = "white")
+       width = 17, height = 11, bg = "white")
 cat("Task 6: wrote vignettes/figures/drug_mapping_diagram.{png,pdf}\n")
