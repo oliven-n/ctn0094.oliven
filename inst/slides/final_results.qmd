@@ -197,7 +197,7 @@ Three NIDA Clinical Trials Network randomized controlled trials, harmonized in `
 
 :::: {.columns style="gap:0.4em; align-items:flex-start;"}
 ::: {.column width="85%"}
-![](../../vignettes/figures/drug_mapping_diagram.png){width=100% style="display:block; margin:0;"}
+![](../../vignettes/figures/drug_mapping_diagram_nokey.png){width=100% style="display:block; margin:0;"}
 :::
 ::: {.column width="15%" style="font-size:0.62em; padding-top:0.2em;"}
 1. Sparse (≤10 events) → dropped

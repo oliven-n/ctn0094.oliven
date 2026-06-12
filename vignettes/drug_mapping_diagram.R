@@ -595,3 +595,11 @@ ggsave("vignettes/figures/drug_mapping_diagram.png", p,
 ggsave("vignettes/figures/drug_mapping_diagram.pdf", p,
        width = 17, height = 11, bg = "white")
 cat("Task 6: wrote vignettes/figures/drug_mapping_diagram.{png,pdf}\n")
+
+# No-key variant for slides: strip the 9 key layers (indices 15–23 in p$layers),
+# keep main content (1–14) and figure title (24).
+p_nokey <- p
+p_nokey$layers <- p_nokey$layers[c(1:14, 24)]
+ggsave("vignettes/figures/drug_mapping_diagram_nokey.png", p_nokey,
+       width = 17, height = 11, dpi = 200, bg = "white")
+cat("Task 6b: wrote vignettes/figures/drug_mapping_diagram_nokey.png\n")
