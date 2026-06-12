@@ -119,7 +119,7 @@ lasso_n_features   <- nrow(lasso_coef)
 
 **Education:** B.S. Mathematics, University of Michigan (2024) · M.S. Bioinformatics, University of Michigan (2025)
 
-**Prior research:** Group theory & network science (undergrad) · Agentic LLM tools for bioinformatics workflows (grad)
+**Prior research:** Group theory & network science (undergrad) · Agentic LLM tooling for bioinformatics workflows (grad)
 
 **Current interests:** Population-level modeling with network science approaches · Experimental design for clinical studies · Mathematical methods applied to population data
 
@@ -452,3 +452,4 @@ dplyr::bind_rows(
 - **Permutation importance instability:** TabPFN and KNN importance estimates use a single permutation pass — rankings are indicative, not definitive
 
 - **LASSO selection instability:** selected predictors change substantially with different random seeds; the sparse set should not be read as identifying the true causal drivers of relapse
+
