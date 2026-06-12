@@ -444,6 +444,23 @@ bind_cols(
   )
 ```
 
+## TabPFN
+
+TabPFN requires no hyperparameter tuning — its configuration is fully determined by the pretrained weights — so there is no tuning grid or selection step. Cross-validation here produces a performance estimate only. The in-sample train metrics below reflect leave-one-out in-context inference over the full training set (each training observation predicted using all other training observations as context); the test column is the held-out 25% split.
+
+```{r tbl-tabpfn-metrics}
+#| tbl-cap: "TabPFN model performance. Train: leave-one-out in-context inference on all training observations (pretrained transformer weights, no tuning). Test: held-out 25% split. Sensitivity and specificity computed at the Youden-J cutoff chosen on the training set."
+bind_cols(
+  tabpfn_train_metrics |> dplyr::rename(Train = .estimate),
+  tabpfn_test_metrics  |> dplyr::filter(.metric != "accuracy") |> dplyr::select(Test = .estimate)
+) |>
+  dplyr::mutate(.metric = c("ROC AUC", "Sensitivity", "Specificity")) |>
+  knitr::kable(
+    digits    = 3,
+    col.names = c("Metric", "Train", "Test")
+  )
+```
+
 ## Model Performance Across Methods
 
 ```{r tbl-all-metrics}
