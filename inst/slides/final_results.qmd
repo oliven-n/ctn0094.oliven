@@ -136,20 +136,42 @@ Participants were opioid-dependent adults enrolled at community treatment progra
 
 ## Substance Use: Drug Grouping
 
-Drug categories were grouped via a manual map (`drug_map`) to reduce sparsity:
+Drug categories grouped via `drug_map` to reduce sparsity; ≥10-event sparsity filter applied:
 
-- Rare prescription opioids (codeine, hydrocodone, morphine, etc.) → **"Opioid"**
-- THC + K2 (synthetic cannabinoid) → **"Cannabinoids"**
-- MDMA + Hallucinogen → **"MDMA/Hallucinogen"** *(flagged for removal — low prevalence)*
-- Non-benzo sedatives → **"Sedatives"**; antidepressants → **"Antidepressant"**
-- Heroin, Fentanyl, Cocaine, Crack, Methamphetamine, Amphetamine kept **separate**
-
-Two-stage filtering applied after grouping:
-
-1. Drop categories with < 10 events in the window
-2. Drop illicit categories used by < 1% of participants (prescribed/legal categories exempt)
+- 11 Rx opioids (codeine, hydrocodone, oxycodone, …) → **"Opioid"**
+- THC + K2 → **"Cannabinoids"** &nbsp;·&nbsp; MDMA + Hallucinogen → **"MDMA/Hallucinogen"**
+- Sedative-Hypnotic + Barbiturate → **"Sedatives"** &nbsp;·&nbsp; Acetaminophen + Gabapentin → **"Analgesic"**
+- **Kept separate:** Heroin, Methadone, Buprenorphine, Suboxone, Fentanyl, Cocaine, Crack, Methamphetamine, Amphetamine
+- **Dropped (< 10 events):** Antibiotic, Antihistamine, Antipsychotic, Cathinones, Inhalant, Methylphenidate, Antidepressant, Unknown
 
 **`r length(surviving_drugs)` drug categories** survived filtering.
+
+## Feature Engineering: Drug Aggregation {.smaller}
+
+:::: {.columns}
+::: {.column width="57%"}
+![](../../vignettes/figures/drug_mapping_diagram.png){width=100%}
+:::
+::: {.column width="43%"}
+**Five aggregation decisions:**
+
+1. **Sparsity filter** (≥10 events) removes 8 rare categories
+
+2. **Distinct opioids** kept separate — unique pharmacology, MOUD markers:
+   Heroin · Methadone · Buprenorphine · Suboxone · Fentanyl;
+   also Amphetamine ≠ Methamphetamine (potency, neurotoxicity)
+
+3. **Sparse + mechanistically related** merged:
+   THC + K2 → Cannabinoids; MDMA + Hallucinogen;
+   11 Rx opioids → Opioid; Sedatives; Analgesic
+
+4. **Alcohol** Heavy / Light / Missing kept separate
+   (enables alcohol restraint composite)
+
+5. **Per-drug features:** `_days`, `_binary`, `_streak`
+   (streak omitted for MOUD agents — adherence ≠ escalation)
+:::
+::::
 
 ## Substance Use: Per-Drug Features
 
