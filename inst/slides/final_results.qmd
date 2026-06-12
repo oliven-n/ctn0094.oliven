@@ -69,9 +69,11 @@ source("../../vignettes/logistic_regression_without_problem_vars.R")
 source("../../vignettes/logistic_regression_wopv_kfold.R")
 source("../../vignettes/knn.R")
 # Save KNN metrics BEFORE knn_wopv.R overwrites knn_train_metrics / knn_cv_metrics
-knn_train_auc <- knn_train_metrics$.estimate[knn_train_metrics$.metric == "roc_auc"]
-knn_cv_auc    <- knn_cv_metrics$mean[knn_cv_metrics$.metric == "roc_auc"]
-knn_test_auc  <- knn_test_metrics$.estimate[knn_test_metrics$.metric == "roc_auc"]
+knn_train_auc  <- knn_train_metrics$.estimate[knn_train_metrics$.metric == "roc_auc"]
+knn_cv_auc     <- knn_cv_metrics$mean[knn_cv_metrics$.metric == "roc_auc"]
+knn_test_auc   <- knn_test_metrics$.estimate[knn_test_metrics$.metric == "roc_auc"]
+knn_train_sens <- knn_train_metrics$.estimate[knn_train_metrics$.metric == "sens"]
+knn_train_spec <- knn_train_metrics$.estimate[knn_train_metrics$.metric == "spec"]
 source("../../vignettes/knn_wopv.R")
 knn_wopv_train_auc <- knn_wopv_train_metrics$.estimate[knn_wopv_train_metrics$.metric == "roc_auc"]
 knn_wopv_cv_auc    <- knn_wopv_cv_metrics$mean[knn_wopv_cv_metrics$.metric == "roc_auc"]
@@ -99,6 +101,26 @@ xgboost_test_auc  <- xgboost_test_metrics$.estimate[xgboost_test_metrics$.metric
 tabpfn_cv_auc     <- tabpfn_cv_metrics$mean[tabpfn_cv_metrics$.metric == "roc_auc"]
 tabpfn_train_auc  <- tabpfn_train_metrics$.estimate[tabpfn_train_metrics$.metric == "roc_auc"]
 tabpfn_test_auc   <- tabpfn_test_metrics$.estimate[tabpfn_test_metrics$.metric == "roc_auc"]
+
+# Train sensitivity & specificity at Youden-J cutoff for all models
+# LR: computed from lr_train_preds using the same youden_cutoff()/sens_spec_at() helpers
+lr_youden_cut  <- youden_cutoff(lr_train_preds)
+lr_yj_ss       <- sens_spec_at(lr_train_preds, lr_youden_cut)
+lr_train_sens  <- lr_yj_ss$.estimate[lr_yj_ss$.metric == "sens"]
+lr_train_spec  <- lr_yj_ss$.estimate[lr_yj_ss$.metric == "spec"]
+# All other models: already at Youden-J via sens_spec_at() in their _train_metrics
+enet_train_sens    <- enet_train_metrics$.estimate[enet_train_metrics$.metric == "sens"]
+enet_train_spec    <- enet_train_metrics$.estimate[enet_train_metrics$.metric == "spec"]
+lasso_train_sens   <- lasso_train_metrics$.estimate[lasso_train_metrics$.metric == "sens"]
+lasso_train_spec   <- lasso_train_metrics$.estimate[lasso_train_metrics$.metric == "spec"]
+cart_train_sens    <- cart_train_metrics$.estimate[cart_train_metrics$.metric == "sens"]
+cart_train_spec    <- cart_train_metrics$.estimate[cart_train_metrics$.metric == "spec"]
+randfor_train_sens <- randfor_train_metrics$.estimate[randfor_train_metrics$.metric == "sens"]
+randfor_train_spec <- randfor_train_metrics$.estimate[randfor_train_metrics$.metric == "spec"]
+xgboost_train_sens <- xgboost_train_metrics$.estimate[xgboost_train_metrics$.metric == "sens"]
+xgboost_train_spec <- xgboost_train_metrics$.estimate[xgboost_train_metrics$.metric == "spec"]
+tabpfn_train_sens  <- tabpfn_train_metrics$.estimate[tabpfn_train_metrics$.metric == "sens"]
+tabpfn_train_spec  <- tabpfn_train_metrics$.estimate[tabpfn_train_metrics$.metric == "spec"]
 ```
 
 # About Me
@@ -142,7 +164,7 @@ tabpfn_test_auc   <- tabpfn_test_metrics$.estimate[tabpfn_test_metrics$.metric =
 
 ::::
 
-:::: {.column style="display:flex; justify-content:center; align-items:center; text-align:left;"}
+:::: {.column style="display:flex; justify-content:center; align-items:center; text-align:left"}
 
 - MOUD reduces opioid-related mortality by **50–60%**
 - Reduces illicit drug use, infectious disease transmission, and criminal activity
@@ -150,7 +172,7 @@ tabpfn_test_auc   <- tabpfn_test_metrics$.estimate[tabpfn_test_metrics$.metric =
 
 ::::
 
-:::
+::::
 
 ## The Challenge: Treatment Matching
 
@@ -182,27 +204,15 @@ Three NIDA Clinical Trials Network randomized controlled trials, harmonized in `
 ## Substance Use: Drug Aggregation
 
 :::: {.columns}
-::: {.column width="57%"}
+::: {.column width="75%"}
 ![](../../vignettes/figures/drug_mapping_diagram.png){width=100%}
 :::
-::: {.column width="43%"}
-**Five aggregation decisions:**
-
-1. **Sparsity filter** (≥10 events) removes 8 rare categories
-
-2. **Distinct opioids** kept separate — unique pharmacology, MOUD markers:
-   Heroin · Methadone · Buprenorphine · Suboxone · Fentanyl;
-   also Amphetamine ≠ Methamphetamine (potency, neurotoxicity)
-
-3. **Sparse + mechanistically related** merged:
-   THC + K2 → Cannabinoids; MDMA + Hallucinogen;
-   11 Rx opioids → Opioid; Sedatives; Analgesic
-
-4. **Alcohol** Heavy / Light / Missing kept separate
-   (enables alcohol restraint composite)
-
-5. **Per-drug features:** `_days`, `_binary`, `_streak`
-   (streak omitted for MOUD agents — adherence ≠ escalation)
+::: {.column width="25%"}
+1. Sparse (≤10 events) → dropped
+2. Distinct opioids kept separate
+3. Related sparse drugs merged
+4. Alcohol subcategories kept
+5. Per-drug: `_days`, `_binary`, `_streak`
 :::
 ::::
 
@@ -217,7 +227,7 @@ Three NIDA Clinical Trials Network randomized controlled trials, harmonized in `
 
 **Cross-drug composite features:**
 
-- **`alcohol_restraint`** — heavy drinking days − light drinking days (net binge index)
+- **`alcohol_restraint`** — heavy drinking days − light drinking days (restraint index)
 - **`polydrug_days`** — days with ≥ 2 distinct categories simultaneously
 - **`drug_breadth`** — number of distinct categories used in the window
 - **`lie_rate`** — UDS-positive but TLFB self-reported no use ÷ total UDS-positive days (under-reporting proxy)
@@ -247,9 +257,9 @@ All steps applied inside each workflow — recipe fit on the analysis fold only 
 - Two variants: all predictors vs. no problem vars (near-separating sparse indicators removed for stability)
 - Generalization estimated by 5-fold CV with `fit_resamples()`
 
-| | CV AUC | Full Train AUC |
-|---|---|---|
-| Logistic (5-fold CV) | `r round(lr_cv_auc, 3)` | `r round(lr_train_auc, 3)` |
+| | CV AUC | Train AUC | Train Sens. | Train Spec. |
+|---|---|---|---|---|
+| Logistic | `r round(lr_cv_auc, 3)` | `r round(lr_train_auc, 3)` | `r round(lr_train_sens, 3)` | `r round(lr_train_spec, 3)` |
 
 ## LASSO & Elastic Net
 
@@ -257,10 +267,10 @@ All steps applied inside each workflow — recipe fit on the analysis fold only 
 - Elastic net selected `mixture = 0.25` (25% L1 / 75% L2) via 50 × 5 grid CV
 - Final penalty by the **one-standard-error rule**: favors sparser, more regularized model
 
-| Model | CV AUC | Full Train AUC |
-|---|---|---|
-| Elastic net | `r round(enet_cv_auc, 3)` | `r round(enet_train_auc, 3)` |
-| LASSO | `r round(lasso_cv_auc, 3)` | `r round(lasso_train_auc, 3)` |
+| Model | CV AUC | Train AUC | Train Sens. | Train Spec. |
+|---|---|---|---|---|
+| Elastic net | `r round(enet_cv_auc, 3)` | `r round(enet_train_auc, 3)` | `r round(enet_train_sens, 3)` | `r round(enet_train_spec, 3)` |
+| LASSO | `r round(lasso_cv_auc, 3)` | `r round(lasso_train_auc, 3)` | `r round(lasso_train_sens, 3)` | `r round(lasso_train_spec, 3)` |
 
 ## K-Nearest Neighbors
 
@@ -268,9 +278,9 @@ All steps applied inside each workflow — recipe fit on the analysis fold only 
 - $k$ neighbors tuned from 5 to 50 by 5-fold CV; one-standard-error rule
 - Tolerates sparse separating predictors (no coefficients to blow up)
 
-| | CV AUC | Full Train AUC |
-|---|---|---|
-| KNN | `r round(knn_cv_auc, 3)` | `r round(knn_train_auc, 3)` |
+| | CV AUC | Train AUC | Train Sens. | Train Spec. |
+|---|---|---|---|---|
+| KNN | `r round(knn_cv_auc, 3)` | `r round(knn_train_auc, 3)` | `r round(knn_train_sens, 3)` | `r round(knn_train_spec, 3)` |
 
 ## Classification and Regression Tree (CART)
 
@@ -278,9 +288,9 @@ All steps applied inside each workflow — recipe fit on the analysis fold only 
 - `cost_complexity` tuned over log-spaced grid; one-standard-error rule selects deepest tree within 1 SE
 - **Most transparent** — splits read as a clinical decision flow
 
-| | CV AUC | Full Train AUC |
-|---|---|---|
-| CART | `r round(cart_cv_auc, 3)` | `r round(cart_train_auc, 3)` |
+| | CV AUC | Train AUC | Train Sens. | Train Spec. |
+|---|---|---|---|---|
+| CART | `r round(cart_cv_auc, 3)` | `r round(cart_train_auc, 3)` | `r round(cart_train_sens, 3)` | `r round(cart_train_spec, 3)` |
 
 ## Random Forest
 
@@ -288,9 +298,9 @@ All steps applied inside each workflow — recipe fit on the analysis fold only 
 - `mtry` and `min_n` tuned by 5-fold CV; `select_best`
 - Averaging across trees sharply reduces single-tree variance
 
-| | CV AUC | Full Train AUC |
-|---|---|---|
-| Random Forest | `r round(randfor_cv_auc, 3)` | `r round(randfor_train_auc, 3)` |
+| | CV AUC | Train AUC | Train Sens. | Train Spec. |
+|---|---|---|---|---|
+| Random Forest | `r round(randfor_cv_auc, 3)` | `r round(randfor_train_auc, 3)` | `r round(randfor_train_sens, 3)` | `r round(randfor_train_spec, 3)` |
 
 ## XGBoost
 
@@ -298,9 +308,9 @@ All steps applied inside each workflow — recipe fit on the analysis fold only 
 - Five hyperparameters tuned; tree budget fixed at 5,000 with early stopping
 - All tuning candidates exhausted the tree budget — headroom with a larger budget
 
-| | CV AUC | Full Train AUC |
-|---|---|---|
-| XGBoost | `r round(xgboost_cv_auc, 3)` | `r round(xgboost_train_auc, 3)` |
+| | CV AUC | Train AUC | Train Sens. | Train Spec. |
+|---|---|---|---|---|
+| XGBoost | `r round(xgboost_cv_auc, 3)` | `r round(xgboost_train_auc, 3)` | `r round(xgboost_train_sens, 3)` | `r round(xgboost_train_spec, 3)` |
 
 ## TabPFN
 
@@ -308,9 +318,9 @@ All steps applied inside each workflow — recipe fit on the analysis fold only 
 - 5-fold CV implemented manually (no parsnip engine): each fold preps recipe → bakes → forward pass
 - Exceeds 1,000-sample pretraining limit (`ignore_pretraining_limits = TRUE`); Python via `reticulate`
 
-| | CV AUC | Full Train AUC |
-|---|---|---|
-| TabPFN | `r round(tabpfn_cv_auc, 3)` | `r round(tabpfn_train_auc, 3)` |
+| | CV AUC | Train AUC | Train Sens. | Train Spec. |
+|---|---|---|---|---|
+| TabPFN | `r round(tabpfn_cv_auc, 3)` | `r round(tabpfn_train_auc, 3)` | `r round(tabpfn_train_sens, 3)` | `r round(tabpfn_train_spec, 3)` |
 
 # Results
 
@@ -393,34 +403,34 @@ vip::vip(tabpfn_vip_obj, num_features = 15, geom = "col") +
 
 ## ROC Curves: Winners
 
-:::: {.columns}
-::: {.column width="50%"}
-**Random Forest** (test AUC = `r round(randfor_test_auc, 3)`)
-
-```{r roc-randfor-slide}
-#| fig-height: 3.5
-#| fig-width: 4.5
-relapse_pred_randfor_test |>
-  roc_curve(truth = outcome, .pred_1, event_level = "second") |>
-  autoplot() +
-  ggplot2::labs(title = NULL, x = "1 − Specificity", y = "Sensitivity") +
-  ggplot2::theme_minimal(base_size = 9)
+```{r roc-overlay-slide}
+#| fig-height: 4.5
+#| fig-width: 6
+dplyr::bind_rows(
+  relapse_pred_randfor_test |>
+    yardstick::roc_curve(truth = outcome, .pred_1, event_level = "second") |>
+    dplyr::mutate(Model = "Random Forest"),
+  relapse_pred_tabpfn_test |>
+    yardstick::roc_curve(truth = outcome, .pred_1, event_level = "second") |>
+    dplyr::mutate(Model = "TabPFN")
+) |>
+  ggplot2::ggplot(ggplot2::aes(x = 1 - specificity, y = sensitivity, color = Model)) +
+  ggplot2::geom_line(linewidth = 1.5) +
+  ggplot2::scale_color_manual(
+    values = c("Random Forest" = "#F47321", "TabPFN" = "#005030"),
+    labels = c(
+      "Random Forest" = paste0("Random Forest  (AUC = ", round(randfor_test_auc, 3), ")"),
+      "TabPFN"        = paste0("TabPFN  (AUC = ", round(tabpfn_test_auc, 3), ")")
+    )
+  ) +
+  ggplot2::geom_abline(lty = 3, color = "gray60", linewidth = 0.8) +
+  ggplot2::labs(
+    title = "Test Set ROC Curves — Winner Models",
+    x = "1 − Specificity", y = "Sensitivity", color = NULL
+  ) +
+  ggplot2::theme_minimal(base_size = 12) +
+  ggplot2::theme(legend.position = "bottom", legend.text = ggplot2::element_text(size = 10))
 ```
-:::
-::: {.column width="50%"}
-**TabPFN** (test AUC = `r round(tabpfn_test_auc, 3)`)
-
-```{r roc-tabpfn-slide}
-#| fig-height: 3.5
-#| fig-width: 4.5
-relapse_pred_tabpfn_test |>
-  roc_curve(truth = outcome, .pred_1, event_level = "second") |>
-  autoplot() +
-  ggplot2::labs(title = NULL, x = "1 − Specificity", y = "Sensitivity") +
-  ggplot2::theme_minimal(base_size = 9)
-```
-:::
-::::
 
 # Future Directions
 
