@@ -1,5 +1,5 @@
 ---
-title: "Predicting treatment response for people undergoing care for OUD"
+title: "Predicting treatment response for people undergoing care for OUD (condensed report)"
 author: "Nat Oliven"
 date: last-modified
 format:
@@ -7,7 +7,7 @@ format:
     embed-resources: true
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{Predicting treatment response for people undergoing care for OUD}
+  %\VignetteIndexEntry{Predicting treatment response for people undergoing care for OUD (condensed report)}
   %\VignetteEngine{quarto::html}
   %\VignetteEncoding{UTF-8}
 knitr:
@@ -403,13 +403,13 @@ tabpfn_test_auc  <- tabpfn_test_metrics$.estimate[tabpfn_test_metrics$.metric ==
 
 dplyr::bind_rows(
   relapse_pred_lasso_test |>
-    yardstick::roc_curve(truth = outcome, .pred_1, event_level = "second") |>
+    roc_curve(truth = outcome, .pred_1, event_level = "second") |>
     dplyr::mutate(Model = "LASSO"),
   relapse_pred_xgboost_test |>
-    yardstick::roc_curve(truth = outcome, .pred_1, event_level = "second") |>
+    roc_curve(truth = outcome, .pred_1, event_level = "second") |>
     dplyr::mutate(Model = "XGBoost"),
   relapse_pred_tabpfn_test |>
-    yardstick::roc_curve(truth = outcome, .pred_1, event_level = "second") |>
+    roc_curve(truth = outcome, .pred_1, event_level = "second") |>
     dplyr::mutate(Model = "TabPFN")
 ) |>
   ggplot2::ggplot(ggplot2::aes(x = 1 - specificity, y = sensitivity, color = Model)) +
