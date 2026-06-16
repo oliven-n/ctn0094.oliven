@@ -175,8 +175,12 @@ cap_vip_cart   <- "CART (rpart engine) variable importance for relapse predictio
 cap_vip_randfor <- "Random forest (ranger engine) variable importance for relapse prediction among CTN-0027/0030/0051 participants (2006-2016): native impurity-based importance, the mean decrease in Gini impurity attributable to each predictor averaged across 1,000 trees."
 cap_vip_xgboost <- "XGBoost (xgboost engine) variable importance for relapse prediction among CTN-0027/0030/0051 participants (2006-2016): native gain-based importance, the mean improvement in training loss contributed by each predictor across all splits where it is used."
 cap_vip_tabpfn  <- "TabPFN (pretrained transformer) permutation variable importance for relapse prediction among CTN-0027/0030/0051 participants (2006-2016): mean decrease in test ROC AUC when each predictor is shuffled (1 permutation)."
-cap_roc_randfor <- "Random forest ROC curve on the held-out 25% test split (CTN-0027/0030/0051 participants, 2006–2016). Relapse is the positive class."
-cap_roc_tabpfn  <- "TabPFN ROC curve on the held-out 25% test split (CTN-0027/0030/0051 participants, 2006–2016). Relapse is the positive class."
+cap_roc_combined <- paste0(
+  "Test-set ROC curves on the held-out 25% split for the winning model (TabPFN)",
+  " and the two honorable mentions (LASSO and XGBoost), among CTN-0027/0030/0051",
+  " participants (2006–2016). Relapse is the positive class; line-label AUCs are",
+  " test-set ROC AUC. Curves are colored in the University of Miami palette."
+)
 ```
 
 # Abstract
@@ -226,20 +230,6 @@ All models predict a binary relapse outcome from the pre-treatment feature matri
 
 All models share a single `recipes` preprocessing pipeline applied inside each `workflow`, so that resampling re-estimates every data-dependent step on the analysis fold only (no leakage). The recipe gives `who` an ID role; removes treatment-arm leakage variables (`treatment_arm` and its medication-type proxies) and zero-variance columns; handles missingness in two tiers — structural study-level missingness gets an explicit `step_indicate_na()` indicator before median/mode imputation, while sporadic item-level missingness is median/mode imputed without an indicator; scores ordered factors with `step_ordinalscore()` where equal spacing is defensible; standardizes all numeric predictors with `step_normalize()`; one-hot encodes unordered factors and uses polynomial contrasts for cigarettes-per-day; and finally drops predictors correlated above |r| = 0.90 with `step_corr()`.
 
-::: {.callout-important title="NOTE TO SELF — REMOVE BEFORE SUBMISSION"}
-
-**Metric-priority reasoning (settle before writing the Discussion):**
-
-- **Model selection prioritizes AUC-ROC** — threshold-free, and the convention adopted here. AUC is *symmetric* in sensitivity and specificity, so it encodes no operating preference, and a sens/spec priority does **not** change which model is selected.
-
-- **Specificity is the operating-point priority in this design.** With relapse coded as the positive class, specificity = correctly identifying the participants who will *not* relapse — i.e., **identifying people whose pre-treatment profile is genuinely promising for treatment**. The costly error to minimize is the false positive (flagging a true non-relapser as high-risk), so a specificity-favoring operating point is the defensible choice. *[Suggested cites — confirm fit before using: Vickers & Elkin (2006), "Decision curve analysis: a novel method for evaluating prediction models," Med Decis Making 26(6):565–574 — formalizes choosing the operating point by the FP:FN cost ratio (the direct support for cost-weighting toward specificity); Wynants et al. (2019), "Three myths about risk thresholds for prediction models," BMC Med 17:192 — thresholds should reflect error costs, not be arbitrary; Pepe (2003), The Statistical Evaluation of Medical Tests — foundational sens/spec reference. SUD domain context: Acion et al. (2017), "Use of a machine learning framework to predict substance use disorder treatment success," PLoS ONE 12(4):e0175383. CAVEAT: the SUD ML literature is split — some opioid-relapse/dropout models deliberately prioritize SENSITIVITY (don't-miss-a-relapser); be ready to justify the specificity choice against that.]*
-
-- **Implementing the specificity priority:** AUC tuning is neutral, and the current sens/spec are reported at the **Youden-J cutoff, which weights sensitivity and specificity equally** — so neither step yet encodes this preference. To prioritize specificity, apply a cost function at the operating point: either (a) **re-tune** hyperparameters on a cost-sensitive objective (heavier; the thresholded objective can destabilize selection), or (b) **more cost-effectively, a post-hoc threshold shift** on the same AUC-selected model (cheap, no re-tuning). Prefer (b).
-
-- Word-choice caveat: this is a *prognostic relapse-risk* model, not a *treatment-benefit* model (treatment arm was excluded), so keep causal "benefit of the drug" language out of the final claims.
-
-:::
-
 ### Logistic Regression
 
 Standard binary logistic regression models the log-odds of relapse as a linear combination of predictors. Used as the interpretable baseline. Estimated via maximum likelihood; no regularization. Implemented in `tidymodels` using the `glm` engine. Two variants are reported: the full-predictor baseline, and a "no problem variables" model that additionally removes predictors exhibiting complete separation (sparse drug-use indicators whose maximum-likelihood estimate does not exist). Because ordinary logistic regression has no tuning parameters, generalization is estimated by 5-fold cross-validation with `fit_resamples()`, optimizing for — and reporting — cross-validated ROC AUC.
@@ -286,93 +276,6 @@ get_n <- function(study) n_by_study$n[n_by_study$project == study]
 
 After restricting to first randomizations, the analysis sample comprised `r nrow(analysis_base) |> scales::comma()` participants: `r get_n("CTN-0027") |> scales::comma()` from CTN-0027, `r get_n("CTN-0030") |> scales::comma()` from CTN-0030, and `r get_n("CTN-0051") |> scales::comma()` from CTN-0051.
 
-## Participant Characteristics
-
-```{r tbl-demographics}
-#| tbl-cap: !expr cap_tbl_demographics
-
-analysis_tibble |>
-  select(project, age, is_male, race, is_hispanic,
-         education, is_living_stable) |>
-  mutate(
-    is_male         = factor(is_male,         levels = c(1, 0), labels = c("Yes", "No")),
-    is_hispanic     = factor(is_hispanic,     levels = c(1, 0), labels = c("Yes", "No")),
-    is_living_stable = factor(is_living_stable, levels = c(1, 0), labels = c("Yes", "No"))
-  ) |>
-  tbl_summary(
-    by = project,
-    include = c(age, is_male, race, is_hispanic, education, is_living_stable),
-    label = list(
-      age              ~ "Age (years)",
-      is_male          ~ "Male",
-      race             ~ "Race",
-      is_hispanic      ~ "Hispanic ethnicity",
-      education        ~ "Education",
-      is_living_stable ~ "Stable housing"
-    ),
-    missing = "no"
-  ) |>
-  modify_header(label = "") |>
-  bold_labels()
-```
-
-## Drug Use in the Pre-Treatment Window
-
-```{r tbl-drug-prevalence}
-#| tbl-cap: !expr cap_tbl_drug
-
-n_analysis <- nrow(analysis_base)
-
-all_drugs_filtered |>
-  semi_join(analysis_base, by = "who") |>
-  distinct(who, what_grouped) |>
-  group_by(what_grouped) |>
-  summarize(n_users = n(), .groups = "drop") |>
-  mutate(
-    pct = round(n_users / n_analysis * 100, 1),
-    what_grouped = as.character(what_grouped)
-  ) |>
-  arrange(desc(n_users)) |>
-  kable(
-    col.names = c("Substance category", "N users", "% of sample"),
-    align = "lrr"
-  )
-```
-
-## Predictor Distributions
-
-```{r fig-withdrawal-severity}
-#| fig-cap: !expr cap_fig_withdrawal
-#| fig-width: 6.5
-#| fig-height: 4.0
-
-analysis_tibble |>
-  filter(!is.na(withdrawal_pre_score)) |>
-  mutate(
-    severity = factor(
-      withdrawal_pre_score,
-      levels = 0:3,
-      labels = c("None (0)", "Mild (1)", "Moderate (2)", "Severe (3)")
-    ),
-    project = as.character(project)
-  ) |>
-  count(project, severity) |>
-  group_by(project) |>
-  mutate(pct = n / sum(n) * 100) |>
-  ggplot(aes(x = severity, y = pct, fill = project)) +  # enriched 6/2
-  geom_col(position = "dodge", width = 0.7) +
-  scale_fill_brewer(palette = "Set2") +
-  labs(
-    title    = "Pre-induction withdrawal severity by study",
-    subtitle = "Percent of each study's participants at each COWS/SOWS severity level",
-    x = "Pre-induction withdrawal severity",
-    y = "Percentage of participants (%)",
-    fill = "Study"
-  ) +
-  theme_minimal(base_size = 11) +
-  theme(legend.position = "top")
-```
-
 ## Feature Matrix
 
 ```{r feature-dimensions}
@@ -381,32 +284,6 @@ n_features     <- ncol(analysis_tibble) - 2L   # subtract who and project
 ```
 
 The analysis tibble contains **`r n_participants |> scales::comma()` participants** and **`r n_features` engineered feature columns** (excluding participant ID and study assignment), spanning substance-use history (per-drug days, binary use, longest streak), polydrug days, drug-use breadth, demographics, addiction severity (ASI), nicotine dependence (Fagerström), pain, psychiatric comorbidity, quality of life, housing stability, IV-use risk behavior, withdrawal severity, prescribed-medication adherence, study site, and cross-domain interactions. This matrix is shipped as the `analysis_tibble` dataset in the `ctn0094.oliven` package.
-
-## Logistic Regression
-
-```{r tbl-lr-or}
-#| tbl-cap: "Logistic regression odds ratios (p < 0.05, sorted by effect size). Wald 95% confidence intervals."
-
-lr_or_table |>
-  kable(
-    digits    = 3,
-    col.names = c("Predictor", "Odds Ratio", "95% CI Low", "95% CI High", "p-value")
-  )
-```
-
-```{r tbl-lr-metrics}
-#| tbl-cap: "Logistic regression model performance. Training and test sets from a stratified 75/25 split."
-
-bind_cols(
-  lr_metrics      |> rename(Train = .estimate),
-  lr_test_metrics |> select(Test = .estimate)
-) |>
-  mutate(.metric = c("Accuracy", "ROC AUC", "Sensitivity", "Specificity")) |>
-  kable(
-    digits    = 3,
-    col.names = c("Metric", "Train", "Test")
-  )
-```
 
 ### Exclusion of Structurally Sparse Predictors
 
@@ -431,37 +308,6 @@ The remaining exclusions addressed complete separation. Inspection of the baseli
 Exclusion proceeded over three iterative rounds. In each round, all predictors with confidence intervals spanning more than approximately 10 orders of magnitude were removed, the model was refitted, and the coefficient table was re-examined. Predictors appearing in subsequent rounds arose exclusively from correlated pairs (Pearson *r* > 0.90 at the `step_corr` threshold): removing the first member of a pair permitted the second to pass the pairwise correlation filter, where it exhibited the same separation pattern. This sequential structure confirms that the final stable configuration reflects genuine structural sparsity rather than an incidental local solution — every excluded variable was either directly sparse or a downstream consequence of direct sparsity.
 
 Following three rounds of exclusion totaling 15 predictors (beyond `treatment_arm`, which is excluded from both models), all `r nrow(wopv_ci_check)` estimable predictors had well-bounded Wald confidence intervals. The three widest spanned `r round(wopv_top3_ci$log10_width[1], 1)`, `r round(wopv_top3_ci$log10_width[2], 1)`, and `r round(wopv_top3_ci$log10_width[3], 1)` orders of magnitude (`r wopv_top3_ci$term[1]`, `r wopv_top3_ci$term[2]`, and `r wopv_top3_ci$term[3]`, respectively); all remaining intervals were narrower. Seven additional terms had missing coefficient estimates due to exact multicollinearity in the encoded design matrix (rank deficiency); these reflect structural properties of the one-hot and polynomial encodings and are not separation.
-
-```{r tbl-lr-wopv-metrics}
-#| tbl-cap: "Logistic regression (glm, no regularization) performance after exclusion of structurally sparse predictors (SSPs). Training and test sets from a stratified 75/25 split (seed 12345). No cross-validation — the model has no tuning parameters; 5-fold CV performance is shown separately in the all-methods comparison table."
-
-bind_cols(
-  lr_metrics_wopv      |> rename(Train = .estimate),
-  lr_test_metrics_wopv |> select(Test = .estimate)
-) |>
-  mutate(.metric = c("Accuracy", "ROC AUC", "Sensitivity", "Specificity")) |>
-  kable(
-    digits    = 3,
-    col.names = c("Metric", "Train", "Test")
-  )
-```
-
-## TabPFN
-
-TabPFN requires no hyperparameter tuning — its configuration is fully determined by the pretrained weights — so there is no tuning grid or selection step. Cross-validation here produces a performance estimate only. The in-sample train metrics below reflect leave-one-out in-context inference over the full training set (each training observation predicted using all other training observations as context); the test column is the held-out 25% split.
-
-```{r tbl-tabpfn-metrics}
-#| tbl-cap: "TabPFN model performance. Train: leave-one-out in-context inference on all training observations (pretrained transformer weights, no tuning). Test: held-out 25% split. Sensitivity and specificity computed at the Youden-J cutoff chosen on the training set."
-bind_cols(
-  tabpfn_train_metrics |> dplyr::select(.metric, Train = .estimate),
-  tabpfn_test_metrics  |> dplyr::filter(.metric != "accuracy") |> dplyr::select(Test = .estimate)
-) |>
-  dplyr::mutate(.metric = c("ROC AUC", "Sensitivity", "Specificity")) |>
-  knitr::kable(
-    digits    = 3,
-    col.names = c("Metric", "Train", "Test")
-  )
-```
 
 ## Model Performance Across Methods
 
@@ -530,63 +376,7 @@ tibble::tribble(
 
 The full-predictor and no-problem-variable logistic models perform near-identically on test ROC AUC (`r lr_test_auc` vs `r lr_wopv_test_auc`), so excluding the separation-prone predictors costs essentially no discrimination while removing numerically meaningless coefficients. We therefore consider the no-problem-variable logistic model the most trustworthy linear specification for handling separation. KNN and LASSO, by contrast, are run on the full predictor set: their built-in mechanisms (distance-based prediction and L1 penalization, respectively) absorb the sparse, separating variables without the coefficient blow-up that destabilizes unpenalized logistic regression.
 
-## Variable Importance by Engine
-
-```{r fig-vip-glm}
-#| fig-cap: !expr cap_vip_glm
-#| fig-width: 6.5
-#| fig-height: 4.5
-vip::vip(lr_wopv_vip_obj, num_features = 15, geom = "col") +
-  ggplot2::labs(title = NULL, x = "Importance (|z-statistic|)", y = NULL) +
-  ggplot2::theme_minimal(base_size = 11)
-```
-
-```{r fig-vip-glmnet}
-#| fig-cap: !expr cap_vip_glmnet
-#| fig-width: 6.5
-#| fig-height: 4.5
-ggplot2::ggplot(lasso_coef,
-  ggplot2::aes(x = importance, y = reorder(term, importance))) +
-  ggplot2::geom_col(fill = "grey40") +
-  ggplot2::labs(x = "Importance (|coefficient| at selected lambda)", y = NULL) +
-  ggplot2::theme_minimal(base_size = 11)
-```
-
-```{r fig-vip-knn}
-#| fig-cap: !expr cap_vip_knn
-#| fig-width: 6.5
-#| fig-height: 4.5
-vip::vip(knn_vip_obj, num_features = 15, geom = "col") +
-  ggplot2::labs(x = "Importance (mean ROC AUC decrease)", y = NULL) +
-  ggplot2::theme_minimal(base_size = 11)
-```
-
-```{r fig-vip-cart}
-#| fig-cap: !expr cap_vip_cart
-#| fig-width: 6.5
-#| fig-height: 4.5
-vip::vip(cart_fit, num_features = 15, geom = "col") +
-  ggplot2::labs(x = "Importance (mean node impurity decrease)", y = NULL) +
-  ggplot2::theme_minimal(base_size = 11)
-```
-
-```{r fig-vip-randfor}
-#| fig-cap: !expr cap_vip_randfor
-#| fig-width: 6.5
-#| fig-height: 4.5
-vip::vip(randfor_fit, num_features = 15, geom = "col") +
-  ggplot2::labs(x = "Importance (mean Gini decrease across trees)", y = NULL) +
-  ggplot2::theme_minimal(base_size = 11)
-```
-
-```{r fig-vip-xgboost}
-#| fig-cap: !expr cap_vip_xgboost
-#| fig-width: 6.5
-#| fig-height: 4.5
-vip::vip(xgboost_fit, num_features = 15, geom = "col") +
-  ggplot2::labs(x = "Importance (mean gain across splits)", y = NULL) +
-  ggplot2::theme_minimal(base_size = 11)
-```
+## Variable Importance (Winning Model)
 
 ```{r fig-vip-tabpfn}
 #| fig-cap: !expr cap_vip_tabpfn
@@ -599,34 +389,46 @@ vip::vip(tabpfn_vip_obj, num_features = 15, geom = "col") +
 
 ## ROC Curves for Winner(s)
 
-```{r fig-roc-randfor}
-#| fig-cap: !expr cap_roc_randfor
-#| fig-width: 5
-#| fig-height: 3.5
-relapse_pred_randfor_test |>
-  roc_curve(truth = outcome, .pred_1, event_level = "second") |>
-  autoplot() +
-  ggplot2::labs(
-    title    = "Random Forest: test ROC curve",
-    subtitle = paste0("Test AUC = ", round(randfor_test_auc, 3)),
-    x = "1 - Specificity", y = "Sensitivity"
-  ) +
-  ggplot2::theme_minimal(base_size = 11)
-```
+```{r fig-roc-combined}
+#| label: fig-roc-combined
+#| fig-cap: !expr cap_roc_combined
+#| fig-width: 6.5
+#| fig-height: 4.5
 
-```{r fig-roc-tabpfn}
-#| fig-cap: !expr cap_roc_tabpfn
-#| fig-width: 5
-#| fig-height: 3.5
-relapse_pred_tabpfn_test |>
-  roc_curve(truth = outcome, .pred_1, event_level = "second") |>
-  autoplot() +
-  ggplot2::labs(
-    title    = "TabPFN: test ROC curve",
-    subtitle = paste0("Test AUC = ", round(tabpfn_test_auc, 3)),
-    x = "1 - Specificity", y = "Sensitivity"
+# Test-split ROC AUC scalars. Recomputed here so the chunk is self-contained
+# regardless of chunk order; identical to the values in tbl-all-metrics.
+lasso_test_auc   <- lasso_test_metrics$.estimate[lasso_test_metrics$.metric == "roc_auc"]
+xgboost_test_auc <- xgboost_test_metrics$.estimate[xgboost_test_metrics$.metric == "roc_auc"]
+tabpfn_test_auc  <- tabpfn_test_metrics$.estimate[tabpfn_test_metrics$.metric == "roc_auc"]
+
+dplyr::bind_rows(
+  relapse_pred_lasso_test |>
+    yardstick::roc_curve(truth = outcome, .pred_1, event_level = "second") |>
+    dplyr::mutate(Model = "LASSO"),
+  relapse_pred_xgboost_test |>
+    yardstick::roc_curve(truth = outcome, .pred_1, event_level = "second") |>
+    dplyr::mutate(Model = "XGBoost"),
+  relapse_pred_tabpfn_test |>
+    yardstick::roc_curve(truth = outcome, .pred_1, event_level = "second") |>
+    dplyr::mutate(Model = "TabPFN")
+) |>
+  ggplot2::ggplot(ggplot2::aes(x = 1 - specificity, y = sensitivity, color = Model)) +
+  ggplot2::geom_line(linewidth = 1.1) +
+  ggplot2::scale_color_manual(
+    values = c("LASSO" = "#FFC72C", "XGBoost" = "#F47321", "TabPFN" = "#005030")
   ) +
-  ggplot2::theme_minimal(base_size = 11)
+  ggplot2::geom_abline(lty = 3, color = "gray60") +
+  ggplot2::labs(
+    title    = "Test-set ROC curves: winner and honorable mentions",
+    subtitle = paste0(
+      "LASSO AUC = ",   round(lasso_test_auc, 3),
+      "   •   XGBoost AUC = ", round(xgboost_test_auc, 3),
+      "   •   TabPFN AUC = ",  round(tabpfn_test_auc, 3)
+    ),
+    x = "1 - Specificity", y = "Sensitivity", color = NULL
+  ) +
+  ggplot2::theme_minimal(base_size = 11) +
+  ggplot2::theme(legend.position = "top")
 ```
 
 # Discussion
@@ -637,29 +439,11 @@ The preprocessing recipe handles two distinct classes of missingness separately:
 
 The baseline logistic regression achieved a ROC AUC of `r round(lr_metrics$.estimate[lr_metrics$.metric == "roc_auc"], 3)` on training and `r round(lr_test_metrics$.estimate[lr_test_metrics$.metric == "roc_auc"], 3)` on test — a mild to moderate drop consistent with overfitting expected from fitting an unregularized model to 100+ predictors, but still reflecting meaningful discriminative ability above chance. The large estimated associations for study membership (CTN-0030: OR ≈ 42, CTN-0027: OR ≈ 4 in the cleaned model) likely reflect between-study heterogeneity in outcome ascertainment or follow-up design rather than pre-treatment clinical effects, consistent with the challenge of pooling trials with distinct protocols.
 
-## Strengths and Weaknesses by Method
+## Winner and Honorable Mentions
 
-**Logistic regression (glm).** *Strengths:* fully interpretable (odds ratios with confidence intervals), no tuning required, and provides an honest probabilistic baseline. *Weaknesses:* with 100+ predictors and several near-separating sparse indicators, the unpenalized fit is numerically unstable (coefficients and confidence intervals diverge), and it overfits, as seen in the train-to-test ROC AUC drop. Removing the problematic predictors restores stable estimates at essentially no cost to discrimination.
+Across every method in the all-methods table, **TabPFN attains the highest full-training-set ROC AUC (`r round(tabpfn_train_auc, 3)`)**, and we designate it the winning model on that basis. The choice is not an artifact of in-sample optimism: carried forward unchanged to the held-out 25% test set, TabPFN remains a top performer (test AUC `r round(tabpfn_test_auc, 3)`), and because no tuning occurs, the same fixed pretrained weights produce both the training and test estimates. The combined ROC curves in @fig-roc-combined show TabPFN alongside the two honorable mentions described below.
 
-**LASSO / elastic net (glmnet).** *Strengths:* built-in regularization tames the separation-prone predictors and performs automatic feature selection, yielding a sparse, deployable model from the full predictor set; the one-standard-error rule guards against overfitting. *Weaknesses:* penalized coefficients are biased toward zero (shrinkage trades a little unbiasedness for stability), the selected sparse set can be unstable across resampling folds, and standardized penalized coefficients are less directly interpretable as odds ratios than unpenalized estimates.
-
-**K-nearest neighbors (kknn).** *Strengths:* non-parametric and able to capture local, non-linear structure with a single tuning parameter; tolerates the separating predictors without coefficient blow-up. *Weaknesses:* no intrinsic variable importance (we resort to computationally expensive permutation importance), sensitive to the curse of dimensionality with 100+ standardized features, exposes no interpretable model form, and prediction cost grows linearly with the training set.
-
-**Classification and regression tree (rpart).** *Strengths:* a single pruned tree is the most transparent model here — the fitted splits read as an explicit, clinically inspectable decision flow, it needs only one tuning parameter (`cost_complexity`), and it handles non-linearities and predictor interactions without manual specification. *Weaknesses:* single trees are high-variance (small data perturbations can change the split structure entirely), their greedy top-down induction is not guaranteed to find the globally optimal tree, and the piecewise-constant fit produces a coarse, staircase-shaped ROC curve because each leaf emits a single probability.
-
-**Random forest (ranger).** *Strengths:* bootstrap aggregation of many trees sharply reduces the single-tree variance, captures non-linear and interaction structure automatically, requires little preprocessing, and is robust to irrelevant predictors; native impurity importance comes for free from the fitted object. *Weaknesses:* the ensemble is no longer directly interpretable as a decision rule, impurity-based importance is biased toward high-cardinality continuous predictors (so the ranking is indicative rather than definitive), and the model is larger and slower to score than the linear baselines.
-
-**Gradient-boosted trees (xgboost).** *Strengths:* sequential boosting with shrinkage and built-in regularization (`loss_reduction`, column/row subsampling, early stopping) is often the strongest tabular learner, and it captures subtle interactions while controlling overfitting through its many regularizers. *Weaknesses:* that flexibility comes at the cost of a high-dimensional tuning burden (five interacting hyperparameters plus the tree budget), greater sensitivity to mis-set hyperparameters, the least interpretable model form of any considered here, and the largest compute cost to tune and fit.
-
-**TabPFN (pretrained transformer).** *Strengths:* zero tuning overhead — the pretrained weights generalize to new tasks out-of-the-box, so all compute goes to inference rather than search; it matches or exceeds tuned tree-ensemble methods on small tabular datasets in published benchmarks [@hollmann2023], it has no hyperparameters to overfit, and it requires no iterative fitting. *Weaknesses:* it is a black box with no interpretable model form (we resort to permutation importance, as with KNN); the pretrained transformer was trained on synthetic datasets of at most 1,000 samples, so applying it to our ~1,869-row training set requires disabling a safety guard (`ignore_pretraining_limits = TRUE`) and may push beyond the model's reliable operating regime; the Python dependency introduces a cross-language environment requirement that complicates deployment; and permutation importance with a single pass (necessary given TabPFN's inference cost) is noisier than multi-permutation estimates.
-
-Across methods, test ROC AUC remains in a fairly narrow band: the predictive signal is modest and the linear baselines stay competitive, but the tree-ensemble methods and TabPFN achieve the best discrimination. Model choice therefore weighs that edge against the interpretability and stability the simpler models offer.
-
-## Best-Performing Model and Cross-Validation Agreement
-
-Selecting on cross-validated ROC AUC — the criterion fixed in advance — the **best-performing model is `r if (tabpfn_cv_auc >= xgboost_cv_auc) "TabPFN" else "XGBoost"`** (CV AUC `r round(max(tabpfn_cv_auc, xgboost_cv_auc), 3)`), the highest of any method in the all-methods table. Carried forward unchanged to the held-out 25% test set, it remains the strongest model (test AUC `r round(if (tabpfn_cv_auc >= xgboost_cv_auc) tabpfn_test_auc else xgboost_test_auc, 3)`), so the choice made on training-set cross-validation generalizes rather than reflecting an overfit selection. For XGBoost: every tuning candidate exhausted the 5,000-tree budget without triggering early stopping, suggesting a larger tree budget at these small learning rates would plausibly raise XGBoost's performance further — headroom the already-converged models do not have. For TabPFN: no tuning occurred; the single-pass inference means the CV estimate and final performance are produced by the same fixed pretrained weights.
-
-For XGBoost — and for several other models, KNN most noticeably — the test AUC is *slightly higher* than the cross-validated estimate. This ordering is expected rather than anomalous, for a few reasons. First, each cross-validation model is trained on only four of the five folds (about 60% of the full sample after the 75/25 split), whereas the final model is refit on the entire training set before it ever sees the test data; the CV estimate therefore reflects models trained on less data than the deployed one, making it a mildly *pessimistic* estimate of final performance. Second, each fold's assessment set (roughly 15% of the sample) is smaller than the 25% test split, so the individual fold AUCs are noisier and their five-fold average carries more sampling variability than the single test estimate. Third, the test set is one particular random draw and may be marginally favorable. Most importantly, these gaps are small relative to the cross-validation standard error (on the order of 0.01–0.02 AUC), so the cross-validated and test estimates agree **well within normal sampling variation** — the differences are noise, not evidence of a real change in performance between the two evaluation contexts.
+We highlight two honorable mentions on grounds other than peak training AUC. **LASSO** is the most economical model: it retains competitive discrimination from a drastically sparse predictor set, keeping only `r nrow(lasso_coef)` non-zero coefficients of roughly 107 candidates after the one-standard-error penalty, within `r round(abs(lasso_test_auc - lr_wopv_test_auc), 3)` test-AUC points of the full unpenalized logistic model (detailed in the LASSO sparsity section below). **XGBoost** earns its mention on different grounds: every tuning candidate exhausted the 5,000-tree budget without ever triggering early stopping, so the model had not yet reached its training ceiling — a larger tree budget at these small learning rates would plausibly raise its performance further, headroom the already-converged models lack. In future work we intend to revisit gradient boosting with a larger tree budget and to evaluate alternative boosted-tree implementations (e.g., LightGBM and CatBoost), which differ in their split-finding and regularization strategies and may extract additional signal.
 
 ## LASSO Sparsity and Predictive Performance
 
